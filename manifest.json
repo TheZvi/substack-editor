@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Substack TOC Helper",
+  "version": "1.0",
+  "description": "Automatically create or correct a Table of Contents for Substack posts.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*.substack.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
