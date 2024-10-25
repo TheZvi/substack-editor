@@ -2,17 +2,35 @@
   "manifest_version": 3,
   "name": "Substack TOC Helper",
   "version": "1.0",
-  "description": "Automatically create or correct a Table of Contents for Substack posts.",
+  "description": "Automatically create or correct a Table of Contents for Substack posts and crosspost to WordPress.",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.wordpress.com/*",
+    "https://*.substack.com/publish/post/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://*.substack.com/*"],
+      "matches": ["https://*.substack.com/publish/post/*"],
       "js": ["content.js"]
+    },
+    {
+      "matches": ["https://*.wordpress.com/wp-admin/post-new.php*"],
+      "js": ["receivers/wordpress-receiver.js"]
     }
   ],
+  "web_accessible_resources": [{
+    "resources": [
+      "extractContents.js",
+      "formatters/wordpress-formatter.js",
+      "receivers/wordpress-receiver.js"
+    ],
+    "matches": ["https://*.substack.com/*", "https://*.wordpress.com/*"]
+  }],
   "background": {
     "service_worker": "background.js"
   },

@@ -1,71 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body {
-            width: 300px;
-            padding: 16px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        }
-        
-        .button-container {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        
-        button {
-            padding: 8px 16px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            background: #f8f8f8;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        button:hover {
-            background: #eee;
-        }
-        
-        #status {
-            margin-top: 12px;
-            padding: 8px;
-            border-radius: 4px;
-            font-size: 14px;
-            display: none;
-        }
-        
-        .success {
-            background: #e6ffe6;
-            color: #006600;
-        }
-        
-        .error {
-            background: #ffe6e6;
-            color: #660000;
-        }
-
-        #removal-log {
-            margin-top: 12px;
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 12px;
-            max-height: 100px;
-            overflow-y: auto;
-            display: none;
-        }
-    </style>
+  <style>
+    body { 
+      width: 200px; 
+      padding: 10px; 
+    }
+    button { 
+      width: 100%;
+      margin: 5px 0;
+      padding: 8px;
+      background: #f0f0f0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #status {
+      margin-top: 10px;
+      padding: 5px;
+      display: none;
+    }
+    #status.success {
+      background-color: #e6ffe6;
+      border: 1px solid #99ff99;
+    }
+    #status.error {
+      background-color: #ffe6e6;
+      border: 1px solid #ff9999;
+    }
+    #removal-log {
+      margin-top: 10px;
+      font-size: 12px;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-    <div class="button-container">
-        <button id="generate-toc">Generate/Update TOC</button>
-        <button id="remove-blanks">Remove Blank Sections</button>
-    </div>
-    <div id="status"></div>
-    <div id="removal-log"></div>
-    <script src="popup.js"></script>
+  <button id="generate-toc">Generate/Update TOC</button>
+  <button id="remove-blanks">Remove Blank Sections</button>
+  <button id="post-wordpress">Post to WordPress</button>
+  <div id="status"></div>
+  <div id="removal-log"></div>
+  <script src="popup.js"></script>
 </body>
 </html>
