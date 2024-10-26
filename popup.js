@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateButton = document.getElementById('generate-toc');
     const removeBlanksButton = document.getElementById('remove-blanks');
     const wordpressButton = document.getElementById('post-wordpress');
+    const linkifyButton = document.getElementById('linkify');
 
     if (generateButton) {
         generateButton.addEventListener('click', async () => {
@@ -83,7 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (wordpressButton) {
-        console.log("WordPress button found");
         wordpressButton.addEventListener('click', async () => {
             console.log("WordPress button clicked");
             try {
@@ -289,6 +289,65 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     } else {
         console.error("WordPress button not found in popup");
+    }
+  
+    if (linkifyButton) {
+        linkifyButton.addEventListener('click', async () => {
+            try {
+                const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+                if (!tab.url.includes('substack.com')) {
+                    showStatus('This feature only works on Substack pages', true);
+                    return;
+                }
+    
+                // Remove any existing script first
+                await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    function: () => {
+                        window.linkifyContent = undefined;
+                    }
+                });
+    
+                // Then inject our script
+                await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    files: ['linkify/linkify-controller.js']
+                });
+    
+                // Then call the function
+                const results = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    function: async () => {
+                        if (typeof window.linkifyContent !== 'function') {
+                            console.error('Linkify content function not found');
+                            return { success: false, error: 'Linkify functionality not initialized' };
+                        }
+                        return await window.linkifyContent();
+                    }
+                });
+
+                const result = results?.[0]?.result;
+                if (result?.success) {
+                    const linkCount = result.results.length;
+                    if (linkCount > 0) {
+                        showStatus(`Added ${linkCount} link${linkCount === 1 ? '' : 's'}`);
+                        const logDiv = document.getElementById('linkify-log');
+                        logDiv.innerHTML = '<strong>Links added:</strong><br>' + 
+                            result.results.map(item => 
+                                `- "${item.text}" ${item.location}`
+                            ).join('<br>');
+                        logDiv.style.display = 'block';
+                    } else {
+                        showStatus('No matching text found to link');
+                    }
+                } else {
+                    showStatus(result?.error || 'Error adding links', true);
+                }
+            } catch (error) {
+                console.error('Error in linkify handler:', error);
+                showStatus('Error: ' + error.message, true);
+            }
+        });
     }
 });
 

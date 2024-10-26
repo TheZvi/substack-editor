@@ -1,7 +1,7 @@
-// Remove or comment out the generateTOC function since it is moved to popup.js
+// Example of a content script that would run automatically on matching pages
+console.log("Content script loaded - this runs automatically on matching pages");
 
-// function generateTOC() {
-//     // The generateTOC code that was moved to popup.js
-// }
-
-// File still here in case we want to put something here later.
+// Example of how to listen for page events
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("Page finished loading - content scripts can react to page events");
+});

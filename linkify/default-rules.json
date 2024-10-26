@@ -1,0 +1,13 @@
+{
+    "linkRules": [
+      {
+        "target": "More Dakka",
+        "url": "https://thezvi.substack.com/p/more-dakka",
+        "matchType": "caseInsensitive",
+        "wholeWord": true,
+        "maxInstances": null,
+        "hoverText": "If a little of something is good, try more of it. That might be better.",
+        "newTab": true
+      }
+    ]
+  }

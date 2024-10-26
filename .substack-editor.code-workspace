@@ -2,6 +2,9 @@
 	"folders": [
 		{
 			"path": "../../.cursor-tutor"
+		},
+		{
+			"path": "."
 		}
 	],
 	"settings": {}
