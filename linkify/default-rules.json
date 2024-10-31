@@ -8,6 +8,132 @@
         "maxInstances": null,
         "hoverText": "If a little of something is good, try more of it. That might be better.",
         "newTab": true
-      }
-    ]
-  }
+      },
+    {
+      "target": "The Copenhagen Interpretation of Ethics",
+      "url": "https://forum.effectivealtruism.org/posts/QXpxioWSQcNuNnNTy/the-copenhagen-interpretation-of-ethics",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "If you interact with a problem, you can be blamed for it.",
+      "newTab": true
+    },
+    {
+      "target": "Asymmetric Justice",
+      "url": "https://thezvi.substack.com/p/asymmetric-justice",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "If you only get credit for good things done intentionally, the incentive is to do nothing.",
+      "newTab": true
+    },
+    {
+      "target": "Everybody Knows",
+      "url": "https://thezvi.substack.com/p/everybody-knows",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "Among other things, what we're saying is: If you don't know this, you are not part of everyone.",
+      "newTab": true
+    },
+    {
+      "target": "Reverse Any Advice You Hear",
+      "url": "https://slatestarcodex.com/2014/03/24/should-you-reverse-any-advice-you-hear/",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "Some of you should do one thing, and some of you should do the other.",
+      "newTab": true
+    },
+    {
+      "target": "Reverse All Advice You Hear",
+      "url": "https://slatestarcodex.com/2014/03/24/should-you-reverse-any-advice-you-hear/",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "Some of you should do one thing, and some of you should do the other.",
+      "newTab": true
+    },
+    {
+      "target": "Advice for the Worried",
+      "url": "https://thezvi.substack.com/p/ai-practical-advice-for-the-worried",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "If you're worried about AI, you need to not abandon normal life.",
+      "newTab": true
+    },
+    {
+      "target": "Battle of the Board",
+      "url": "https://thezvi.substack.com/p/openai-the-battle-of-the-board",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "They fought the OpenAI board, and the board lost.",
+      "newTab": true
+    },
+    {
+      "target": "Unilateralist’s Curse",
+      "url": "https://forum.effectivealtruism.org/topics/unilateralist-s-curse",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "If any one person decides for everyone, you'd best be cautious deciding.",
+      "newTab": true
+    },
+    {
+      "target": "Fnord",
+      "url": "https://simple.wikipedia.org/wiki/Fnord",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "Fnord.",
+      "newTab": true
+    },
+    {
+      "target": "The Biden Executive Order",
+      "url": "https://thezvi.substack.com/p/on-the-executive-order?utm_source=publication-search",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "Analysis of the Biden Executive Order on AI.",
+      "newTab": true
+    },
+    {
+      "target": "Golden Gate Claude",
+      "url": "https://thezvi.substack.com/p/i-am-the-golden-gate-bridge?utm_source=publication-search",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "This hover text reminds me of the Golden Gate Bridge.",
+      "newTab": true
+    },
+    {
+      "target": "Escalated Quickly",
+      "url": "https://www.youtube.com/watch?v=rFeVfwDvTyM",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "If you escalate quickly, you can get away with a lot.",
+      "newTab": true
+    },
+    {
+      "target": "Not Great, Bob",
+      "url": "https://www.youtube.com/watch?v=iLqe4sGRvtU&ab_channel=FreddyRumsen",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "I've been better.",
+      "newTab": true
+    },
+    {
+      "target": "That’s a paddlin",
+      "url": "https://www.youtube.com/watch?v=sKiLfH3DVGc&ab_channel=ThingsICantFindOtherwise",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "Oh, you'd better believe it.",
+      "newTab": true
+    }
+  ]
+}

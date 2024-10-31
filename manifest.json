@@ -25,7 +25,10 @@
       "formatters/wordpress-formatter.js",
       "receivers/wordpress-receiver.js",
       "linkify/default-rules.json",
-      "linkify/linkify-controller.js"
+      "linkify/linkify-controller.js",
+      "linkify/ui/manage-linkify-rules.html",
+      "linkify/ui/manage-linkify-rules.js",
+      "linkify/ui/manage-linkify-rules.css"
     ],
     "matches": ["https://*.substack.com/*", "https://*.wordpress.com/*"]
   }],

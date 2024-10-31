@@ -1,0 +1,90 @@
+<!-- manage-linkify-rules.html -->
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Manage Linkify Rules</title>
+        <!-- <link rel="stylesheet" type="text/css" href="/linkify/ui/manage-linkify-rules.css"> -->
+        <script src="../storage-controller.js"></script>
+        <script src="./manage-linkify-rules.js"></script>
+    </head>
+<body>
+    <div class="rules-container">
+        <!-- Default Rules Section -->
+        <section>
+            <h2>Active Rules</h2>
+            <div class="rules-list" id="default-rules">
+                <!-- Active rules go here -->
+            </div>
+        </section>
+    
+        <!-- Disabled Rules Section -->
+        <section id="disabled-section" style="display: none;">
+            <h2>Disabled Rules</h2>
+            <div class="rules-list" id="disabled-rules">
+                <!-- Disabled rules go here -->
+            </div>
+        </section>
+    
+        <!-- User Rules Section -->
+        <section>
+            <h2>Custom Rules</h2>
+            <button id="add-rule">Add New Rule</button>
+            <div class="rules-list" id="user-rules">
+                <!-- User added rules -->
+            </div>
+        </section>
+
+        <!-- Actions -->
+        <div class="actions">
+            <button id="export-all">Export All Rules</button>
+            <button id="import-rules">Import Rules</button>
+        </div>
+    </div>
+
+    <!-- Rule Editor Modal -->
+<!-- Rule Editor Modal -->
+<div id="rule-editor" class="modal">
+    <div class="modal-content">
+        <h3>Add New Rule</h3>
+        <form>
+            <div class="form-group">
+                <label for="target">Text to Match:</label>
+                <input type="text" id="target" name="target" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="url">Link URL:</label>
+                <input type="url" id="url" name="url" required>
+            </div>
+            
+            <div class="form-group checkbox">
+                <label>
+                    <input type="checkbox" name="caseInsensitive" checked>
+                    Case insensitive matching
+                </label>
+            </div>
+            
+            <div class="form-group checkbox">
+                <label>
+                    <input type="checkbox" name="wholeWord" checked>
+                    Match whole words only
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label for="hoverText">Hover Text (optional):</label>
+                <input type="text" id="hoverText" name="hoverText">
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit">Save Rule</button>
+                <button type="button" class="cancel">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+    <script src="../storage-controller.js"></script>
+    <script src="manage-linkify-rules.js"></script>
+</body>
+</html>

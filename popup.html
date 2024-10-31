@@ -2,16 +2,6 @@
 <html>
 <head>
   <style>
-    #linkify-log {
-        margin-top: 10px;
-        padding: 5px;
-        border: 1px solid #ddd;
-        max-height: 200px;
-        overflow-y: auto;
-        display: none;
-    }
-</style>
-  <style>
     body { 
       width: 200px; 
       padding: 10px; 
@@ -42,6 +32,14 @@
       font-size: 12px;
       display: none;
     }
+    #linkify-log {
+        margin-top: 10px;
+        padding: 5px;
+        border: 1px solid #ddd;
+        max-height: 200px;
+        overflow-y: auto;
+        display: none;
+    }
   </style>
 </head>
 <body>
@@ -49,8 +47,10 @@
   <button id="remove-blanks">Remove Blank Sections</button>
   <button id="post-wordpress">Post to WordPress</button>
   <button id="linkify">Linkify Content</button>
+  <button id="manage-linkify-rules">Manage Linkify Rules</button>
   <div id="status"></div>
   <div id="removal-log"></div>
+  <div id="linkify-log"></div>
   <script src="popup.js"></script>
 </body>
 </html>

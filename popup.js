@@ -300,15 +300,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
     
-                // Remove any existing script first
+                // Clean up previous script
                 await chrome.scripting.executeScript({
                     target: {tabId: tab.id},
                     function: () => {
                         window.linkifyContent = undefined;
+                        window.linkRules = undefined;
+                        window.linkResults = undefined;
+                        // Also remove the observer if it exists
+                        if (window._linkifyObserver) {
+                            window._linkifyObserver.disconnect();
+                            window._linkifyObserver = null;
+                        }
+
+                        // Clean up the style
+                        document.querySelector('#linkify-hover-style')?.remove();
                     }
                 });
     
-                // Then inject our script
+                // Wait a moment for cleanup
+                await new Promise(resolve => setTimeout(resolve, 100));
+    
+                // Then inject and run
                 await chrome.scripting.executeScript({
                     target: {tabId: tab.id},
                     files: ['linkify/linkify-controller.js']
@@ -325,6 +338,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         return await window.linkifyContent();
                     }
                 });
+    
+                // ... rest of handler ...
 
                 const result = results?.[0]?.result;
                 if (result?.success) {
@@ -349,6 +364,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    const manageLinkifyRulesButton = document.getElementById('manage-linkify-rules');
+    if (manageLinkifyRulesButton) {
+        manageLinkifyRulesButton.addEventListener('click', () => {
+            chrome.tabs.create({
+                url: chrome.runtime.getURL('linkify/ui/manage-linkify-rules.html')
+        });
+    });
+}
 });
 
 function generateTOC(postUrl) {
