@@ -13,10 +13,14 @@
     "https://*.wordpress.com/*",
     "https://*.substack.com/publish/post/*"
   ],
-  "content_scripts": [
+"content_scripts": [
     {
       "matches": ["https://*.substack.com/publish/post/*"],
       "js": ["content.js"]
+    },
+    {
+      "matches": ["https://*.wordpress.com/wp-admin/post-new.php*"],
+      "js": ["receivers/wordpress-receiver.js"]
     }
   ],
   "web_accessible_resources": [{
