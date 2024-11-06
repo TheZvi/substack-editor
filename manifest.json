@@ -7,13 +7,25 @@
     "activeTab",
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "contextMenus",    
+    "commands",
+    "notifications"
   ],
   "host_permissions": [
     "https://*.wordpress.com/*",
-    "https://*.substack.com/publish/post/*"
+    "https://*.substack.com/publish/post/*",
+    "https://api.anthropic.com/*"
   ],
-"content_scripts": [
+  "commands": {        
+    "transform-text": {
+      "suggested_key": {
+        "default": "Ctrl+Q"
+      },
+      "description": "Transform selected text"
+    }
+  },
+  "content_scripts": [
     {
       "matches": ["https://*.substack.com/publish/post/*"],
       "js": ["content.js"]
@@ -32,7 +44,12 @@
       "linkify/linkify-controller.js",
       "linkify/ui/manage-linkify-rules.html",
       "linkify/ui/manage-linkify-rules.js",
-      "linkify/ui/manage-linkify-rules.css"
+      "linkify/ui/manage-linkify-rules.css",
+      "shared/llm/api/base-api.js",
+      "shared/llm/api/claude-api.js",
+      "shared/llm/config/api-keys.local.js",
+      "shared/llm/config/*",
+      "features/text-transform/*"
     ],
     "matches": ["https://*.substack.com/*", "https://*.wordpress.com/*"]
   }],

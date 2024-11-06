@@ -372,6 +372,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 url: chrome.runtime.getURL('linkify/ui/manage-linkify-rules.html')
         });
     });
+// API Key Management
+const apiKeyInput = document.getElementById('claude-api-key');
+const saveKeyButton = document.getElementById('save-api-key');
+const showKeyButton = document.getElementById('show-key');
+const statusDiv = document.getElementById('api-key-status');
+
+// Load existing API key if any
+chrome.storage.local.get('llmApiKeys', function(data) {
+    if (data.llmApiKeys?.ClaudeApi) {
+        apiKeyInput.value = data.llmApiKeys.ClaudeApi;
+        showStatus('API key loaded', false);
+    }
+});
+
+// Toggle key visibility
+showKeyButton.addEventListener('click', () => {
+    if (apiKeyInput.type === 'password') {
+        apiKeyInput.type = 'text';
+        showKeyButton.textContent = '🔒';
+    } else {
+        apiKeyInput.type = 'password';
+        showKeyButton.textContent = '👁️';
+    }
+});
+
+// Save API key
+saveKeyButton.addEventListener('click', async () => {
+    const key = apiKeyInput.value.trim();
+    
+    try {
+        if (!key.startsWith('sk-') || key.length < 10) {
+            throw new Error('Invalid API key format. Should start with "sk-"');
+        }
+
+        const llmApiKeys = (await chrome.storage.local.get('llmApiKeys')).llmApiKeys || {};
+        llmApiKeys.ClaudeApi = key;
+        await chrome.storage.local.set({ llmApiKeys });
+        
+        // After saving, retrieve and show the stored key
+        const stored = await chrome.storage.local.get('llmApiKeys');
+        const storedKey = stored.llmApiKeys.ClaudeApi;
+        showStatus(`API key saved successfully. First 10 chars: ${storedKey.substring(0, 10)}`, false);
+
+    } catch (error) {
+        console.error('API key error:', error);
+        showStatus(error.message, true);
+    }
+});
+
+    function showStatus(message, isError = false) {
+        statusDiv.textContent = message;
+        statusDiv.className = 'status ' + (isError ? 'error' : 'success');
+    }
+
 }
 });
 

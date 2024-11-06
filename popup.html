@@ -33,12 +33,55 @@
       display: none;
     }
     #linkify-log {
-        margin-top: 10px;
-        padding: 5px;
-        border: 1px solid #ddd;
-        max-height: 200px;
-        overflow-y: auto;
-        display: none;
+      margin-top: 10px;
+      padding: 5px;
+      border: 1px solid #ddd;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+    }
+    /* New API key section styles */
+    .section {
+      margin-top: 15px;
+      padding-top: 10px;
+      border-top: 1px solid #ddd;
+    }
+    .input-group {
+      display: flex;
+      gap: 8px;
+      margin: 8px 0;
+      align-items: center;
+    }
+    .input-group input {
+      flex: 1;
+      padding: 4px;
+    }
+    .input-group button {
+      width: auto;  /* Override the 100% width from general button style */
+    }
+    .icon-button {
+      padding: 4px 8px;
+      cursor: pointer;
+      width: auto !important;  /* Override the 100% width */
+    }
+    #api-key-status {
+      font-size: 0.9em;
+      margin-top: 4px;
+    }
+    #api-key-status.error {
+      color: #d32f2f;
+    }
+    #api-key-status.success {
+      color: #388e3c;
+    }
+    /* Fix the section header */
+    .section h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+    }
+    /* Make the API key input not too wide */
+    #claude-api-key {
+      width: 120px;
     }
   </style>
 </head>
@@ -51,6 +94,16 @@
   <div id="status"></div>
   <div id="removal-log"></div>
   <div id="linkify-log"></div>
+  <div id="api-key-section" class="section">
+    <h3>API Settings</h3>
+    <div class="input-group">
+      <label for="claude-api-key">Claude API Key:</label>
+      <input type="password" id="claude-api-key" placeholder="sk-...">
+      <button id="save-api-key">Save</button>
+      <button id="show-key" class="icon-button">👁️</button>
+    </div>
+    <div id="api-key-status" class="status"></div>
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>
