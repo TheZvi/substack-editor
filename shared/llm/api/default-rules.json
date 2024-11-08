@@ -1,0 +1,38 @@
+{
+    "transformationRules": [
+        {
+            "priority": 1,
+            "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS"
+        },
+        {
+            "priority": 2,
+            "description": "Expand common abbreviations (e.g., 'idk' to 'I don't know', 'abr' to 'abbreviation')"
+        },
+        {
+            "priority": 3,
+            "description": "Remove excessive whitespace and newlines while preserving paragraph breaks"
+        },
+        {
+            "priority": 4,
+            "description": "Preserve @mentions, hashtags, and URLs exactly as written"
+        },
+        {
+            "id": "fix-punctuation",
+            "description": "Correct obvious punctuation errors, including proper comma usage",
+            "enabled": true,
+            "priority": 5
+        },
+        {
+            "id": "clean-mentions",
+            "description": "Remove extra line breaks before and after @mentions",
+            "enabled": true,
+            "priority": 6
+        },
+        {
+            "id": "format-lists",
+            "description": "Convert informal numbered lists into proper HTML ordered lists",
+            "enabled": true,
+            "priority": 7
+        }
+    ]
+} 

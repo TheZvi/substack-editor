@@ -7,74 +7,59 @@ class TransformController {
         this.api = new window.GeminiApi();
         this.rules = {
             transformationRules: [
-                {
-                    "priority": 1,
-                    "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS"
-                },
-                {
-                    "priority": 2,
-                    "description": "Expand common abbreviations (e.g., 'idk' to 'I don't know', 'abr' to 'abbreviation')"
-                },
-                {
-                    "priority": 3,
-                    "description": "Remove excessive whitespace and newlines while preserving paragraph breaks"
-                },
-                {
-                    "priority": 4,
-                    "description": "Preserve @mentions, hashtags, and URLs exactly as written"
-                },
-                {
-                    "id": "fix-punctuation",
-                    "description": "Correct obvious punctuation errors, including proper comma usage",
-                    "enabled": true,
-                    "priority": 5
-                },
-                {
-                    "id": "clean-mentions",
-                    "description": "Remove extra line breaks before and after @mentions",
-                    "enabled": true,
-                    "priority": 6
-                },
-                {
-                    "id": "format-lists",
-                    "description": "Convert informal numbered lists into proper HTML ordered lists",
-                    "enabled": true,
-                    "priority": 7
-                }
+                { "priority": 1, "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS" },
+                { "priority": 2, "description": "Expand all abbreviations and make any other fixes according to the New York Times style guide" },
+                { "priority": 3, "description": "Remove excessive whitespace and newlines while preserving paragraph breaks" },
+                { "priority": 4, "description": "Preserve hashtags and URLs exactly as written" },
+                { "priority": 5, "descirption": "If you know the name an @mention refers to, replace it with that name, otherwise leave it exactly as is."},
+                { "priority": 6, "description": "Correct obvious punctuation errors, including proper comma usage" },
+                { "priority": 7, "description": "Remove extra line breaks before and after @mentions" },
+                { "priority": 8, "description": "Convert informal numbered lists into proper HTML ordered lists" },
+                { "priority": 9, "description": "Fix all spelling and grammar errors according to the New York Times style guide, but do not change capitalization of acronyms." }
             ]
         };
-        console.log("Transform controller initialized with API");
         
         window.addEventListener('message', async (event) => {
             if (event.source !== window) return;
             if (event.data.type !== 'transform-text') return;
             
-            console.log("Received transform request");
             await this.handleTransform(event.data.text || window.getSelection().toString());
-        });
-    }
-
-    async getApiKey(type) {
-        return new Promise((resolve) => {
-            window.postMessage({
-                type: 'get-api-key',
-                service: type
-            }, '*');
-
-            const handler = (event) => {
-                if (event.source !== window) return;
-                if (event.data.type !== 'api-key-response') return;
-                
-                window.removeEventListener('message', handler);
-                resolve(event.data.key);
-            };
-
-            window.addEventListener('message', handler);
         });
     }
 
     async getRules() {
         return this.rules.transformationRules;
+    }
+
+    async getApiKey(type) {
+        return new Promise((resolve, reject) => {
+            // Add timeout to prevent hanging
+            const timeout = setTimeout(() => {
+                window.removeEventListener('message', handler);
+                reject(new Error('API key request timed out'));
+            }, 5000); // 5 second timeout
+
+            const handler = (event) => {
+                if (event.source !== window) return;
+                if (event.data.type !== 'api-key-response') return;
+                
+                clearTimeout(timeout);
+                window.removeEventListener('message', handler);
+                resolve(event.data.key);
+            };
+
+            try {
+                window.postMessage({
+                    type: 'get-api-key',
+                    service: type
+                }, '*');
+                window.addEventListener('message', handler);
+            } catch (error) {
+                clearTimeout(timeout);
+                window.removeEventListener('message', handler);
+                reject(error);
+            }
+        });
     }
 
     async handleTransform(selectedText) {

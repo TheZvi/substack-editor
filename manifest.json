@@ -52,7 +52,8 @@
       "shared/llm/api/claude_api.js",
       "shared/llm/config/api-keys.local.js",
       "shared/llm/config/*",
-      "features/text-transform/*"
+      "features/text-transform/*",
+      "shared/llm/api/default-rules.json"
     ],
     "matches": ["https://*.substack.com/*", "https://*.wordpress.com/*"]
   }],
