@@ -153,15 +153,21 @@ class TransformController {
             range.deleteContents();
             range.insertNode(fragment);
             
-            // 7. Post-insertion DOM state
-            console.log("\n6. Post-insertion DOM:");
-            const insertedContent = range.commonAncestorContainer;
-            console.log("Inserted content parent:", insertedContent.parentNode);
-            console.log("Parent's children:", Array.from(insertedContent.parentNode.childNodes).map(n => ({
-                type: n.nodeType,
-                name: n.nodeName,
-                content: n.textContent
-            })));
+            // Clean up empty paragraphs at start/end of blockquote
+            setTimeout(() => {
+                const blockquote = range.commonAncestorContainer.closest('blockquote');
+                if (blockquote) {
+                    const paragraphs = blockquote.querySelectorAll('p');
+                    if (paragraphs.length > 0) {
+                        if (!paragraphs[0].textContent.trim()) {
+                            paragraphs[0].remove();
+                        }
+                        if (!paragraphs[paragraphs.length - 1].textContent.trim()) {
+                            paragraphs[paragraphs.length - 1].remove();
+                        }
+                    }
+                }
+            }, 200);
             
             return { success: true };
 
