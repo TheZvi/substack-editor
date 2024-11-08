@@ -246,9 +246,10 @@ document.addEventListener('DOMContentLoaded', () => {
         buttons.manageLinkifyRules.addEventListener('click', () => {
             console.log("Manage rules button clicked");
             try {
-                chrome.runtime.openOptionsPage();
+                const rulesUrl = chrome.runtime.getURL('linkify/ui/manage-linkify-rules.html');
+                chrome.tabs.create({ url: rulesUrl });
             } catch (error) {
-                console.error("Error opening options page:", error);
+                console.error("Error opening rules page:", error);
                 showStatus('Error opening rules manager: ' + error.message, true);
             }
         });
