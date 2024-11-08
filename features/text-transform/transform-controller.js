@@ -125,42 +125,15 @@ class TransformController {
             console.log("End container:", range.endContainer);
             console.log("Common ancestor:", range.commonAncestorContainer);
             
-            // 4. Fragment creation
-            const lines = transformedText.trim().split('\n');
-            console.log("\n4. Fragment Creation:");
-            console.log("Split lines:", lines);
+            // 4. Direct insertion
+            console.log("\n4. Direct insertion:");
+            console.log("Text to insert:", transformedText);
             
-            const fragment = document.createDocumentFragment();
-            lines.forEach((line, index) => {
-                console.log(`Line ${index} nodes:`, {
-                    line: line,
-                    addingBR: index > 0,
-                    hasContent: line.trim().length > 0
-                });
-                
-                if (index > 0) {
-                    fragment.appendChild(document.createElement('br'));
-                }
-                if (line.trim()) {
-                    fragment.appendChild(document.createTextNode(line));
-                }
-            });
-            
-            // 5. Just before insertion
-            console.log("\n5. Pre-insertion:");
-            console.log("Fragment node count:", fragment.childNodes.length);
-            console.log("Fragment nodes:", Array.from(fragment.childNodes).map(n => ({
-                type: n.nodeType,
-                name: n.nodeName,
-                content: n.textContent
-            })));
-            
-            // 6. Insertion
             range.deleteContents();
-            range.insertNode(fragment);
+            range.insertNode(document.createTextNode(transformedText));
             
-            // 7. Post-insertion DOM state
-            console.log("\n6. Post-insertion DOM:");
+            // 5. Post-insertion DOM state
+            console.log("\n5. Post-insertion DOM:");
             const insertedContent = range.commonAncestorContainer;
             console.log("Inserted content parent:", insertedContent.parentNode);
             console.log("Parent's children:", Array.from(insertedContent.parentNode.childNodes).map(n => ({
