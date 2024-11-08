@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Text Transformer Options</title>
+    <link rel="stylesheet" type="text/css" href="options.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Text Transformer Settings</h1>
+        
+        <form id="settings-form">
+            <!-- API Selection -->
+            <div class="form-group">
+                <label for="api-select">Select API:</label>
+                <select id="api-select">
+                    <option value="gemini">Google Gemini</option>
+                    <option value="claude">Anthropic Claude</option>
+                </select>
+            </div>
+
+            <!-- Anthropic Settings -->
+            <div class="api-settings" id="claude-settings">
+                <h2>Anthropic Claude Settings</h2>
+                <div class="form-group">
+                    <label for="claude-key">API Key:</label>
+                    <input type="password" id="claude-key" />
+                    <button type="button" class="show-hide-key">Show/Hide</button>
+                </div>
+                <div class="form-group">
+                    <label for="claude-model">Model:</label>
+                    <select id="claude-model">
+                        <option value="claude-3-haiku">Claude 3 Haiku</option>
+                        <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                        <option value="claude-3-opus">Claude 3 Opus</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Gemini Settings -->
+            <div class="api-settings" id="gemini-settings">
+                <h2>Google Gemini Settings</h2>
+                <div class="form-group">
+                    <label for="gemini-key">API Key:</label>
+                    <input type="password" id="gemini-key" />
+                    <button type="button" class="show-hide-key">Show/Hide</button>
+                </div>
+                <div class="form-group">
+                    <label for="gemini-model">Model:</label>
+                    <select id="gemini-model">
+                        <option value="gemini-pro">Gemini Pro</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit">Save Settings</button>
+        </form>
+    </div>
+    <script src="options.js"></script>
+</body>
+</html> 

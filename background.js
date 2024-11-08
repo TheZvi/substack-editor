@@ -25,10 +25,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       chrome.tabs.sendMessage(tab.id, {
           action: "transformText",
           text: info.selectionText
-      }, () => {
+      }, (response) => {
           if (chrome.runtime.lastError) {
-              console.log("Message sent to tab"); // todo remove
+              console.log("Error sending message:", chrome.runtime.lastError);
+              return;
           }
+          console.log("Transform message sent successfully:", response);
       });
   }
 });
@@ -39,12 +41,12 @@ chrome.commands.onCommand.addListener((command, tab) => {
       console.log("Keyboard command detected, transforming text."); // todo remove
       chrome.tabs.sendMessage(tab.id, {
           action: "transformText"
-      }, () => {
-          // Ignore any response errors
+      }, (response) => {
           if (chrome.runtime.lastError) {
-              // This prevents the "Could not establish connection" error from appearing
-              console.log("Message sent to tab"); // todo remove
+              console.log("Error sending message:", chrome.runtime.lastError);
+              return;
           }
+          console.log("Transform message sent successfully:", response);
       });
   }
 }); 
@@ -62,43 +64,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Add this as a new listener at the end of background.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'claude-api-request') {
+  if (request.action === 'claude-api-request' || request.action === 'gemini-api-request') {
       (async () => {
           try {
-              console.log("Headers received in background.js:", request.options.headers);
-              
               const response = await fetch(request.endpoint, {
                   method: 'POST',
                   headers: request.options.headers,
                   body: JSON.stringify(request.payload)
               });
 
-              // Log the actual response for debugging
-              console.log("Raw API response:", {
-                  status: response.status,
-                  statusText: response.statusText
-              }); // todo remove
-
               if (!response.ok) {
-                const errorText = await response.text();
-                console.log("Full error response details:", JSON.stringify({
-                    status: response.status,
-                    statusText: response.statusText,
-                    body: errorText,
-                    headers: Object.fromEntries(response.headers.entries())
-                }, null, 2));
-                sendResponse({ 
-                    success: false, 
-                    error: `API request failed: ${response.status} ${errorText}`
-                });
-                return;
-            }
+                  const errorText = await response.text();
+                  console.error("API error:", errorText);
+                  sendResponse({ success: false, error: `API request failed: ${response.status} ${errorText}` });
+                  return;
+              }
 
               const data = await response.json();
-              console.log("Parsed API response:", data); // todo remove
               sendResponse({ success: true, data });
           } catch (error) {
-              console.error("Claude API error in background:", error); // todo remove
+              console.error("API error in background:", error);
               sendResponse({ 
                   success: false, 
                   error: error.message || 'Unknown error occurred'

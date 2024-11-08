@@ -15,7 +15,9 @@
   "host_permissions": [
     "https://*.wordpress.com/*",
     "https://*.substack.com/publish/post/*",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://*.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "commands": {        
     "transform-text": {
@@ -46,7 +48,8 @@
       "linkify/ui/manage-linkify-rules.js",
       "linkify/ui/manage-linkify-rules.css",
       "shared/llm/api/base-api.js",
-      "shared/llm/api/claude-api.js",
+      "shared/llm/api/gemini_api.js",
+      "shared/llm/api/claude_api.js",
       "shared/llm/config/api-keys.local.js",
       "shared/llm/config/*",
       "features/text-transform/*"
@@ -58,5 +61,9 @@
   },
   "action": {
     "default_popup": "popup.html"
+  },
+  "options_page": "options/options.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
 }

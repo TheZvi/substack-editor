@@ -2,7 +2,6 @@
 
 class ClaudeApi extends LLMApi {
     constructor(config = {}) {
-        console.log("ClaudeApi constructor"); // todo remove
         super({
             apiVersion: '2024-01-01',
             model: 'claude-3-haiku',
@@ -12,17 +11,11 @@ class ClaudeApi extends LLMApi {
 
     async transformText(text, rules = [], customInstructions = '') {
         const apiKey = await this._getApiKey();
-        console.log("Raw API key (first 10 chars):", JSON.stringify(apiKey.substring(0, 10)));
-
-        // Clean the key immediately after getting it
         const cleanKey = apiKey.replace(/^["']|["']$/g, '').trim();
-        console.log("Key after initial cleaning:", cleanKey.substring(0, 10));
 
         if (!cleanKey) {
             throw new Error('Claude API key not found');
         }
-
-        console.log("Using API key:", cleanKey.substring(0, 5) + "..." + cleanKey.substring(cleanKey.length - 4)); // todo remove
 
         // Construct system prompt based on rules
         const systemPrompt = this._buildSystemPrompt(rules);
@@ -49,14 +42,10 @@ class ClaudeApi extends LLMApi {
             headers: {
                 'Content-Type': 'application/json',
                 'anthropic-version': this.config.apiVersion,
-                Authorization: 'Bearer ' + apiKey.replace(/['"]/g, '').trim()
+                Authorization: 'Bearer ' + cleanKey
             }
         };
 
-        console.log("Raw header value:", options.headers.Authorization);
-        
-        console.log("Headers being sent from claude-api.js:", options.headers);
-        
         const payload = {
             model: this.config.model,
             messages: messages,

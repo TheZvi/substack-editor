@@ -3,7 +3,7 @@
 <head>
   <style>
     body { 
-      width: 200px; 
+      width: 250px; 
       padding: 10px; 
     }
     button { 
@@ -48,21 +48,20 @@
     }
     .input-group {
       display: flex;
-      gap: 8px;
-      margin: 8px 0;
       align-items: center;
+      gap: 4px;
+      margin: 8px 0;
     }
     .input-group input {
-      flex: 1;
-      padding: 4px;
+      width: 140px;
     }
     .input-group button {
-      width: auto;  /* Override the 100% width from general button style */
+      min-width: 45px;
+      padding: 4px 6px;
     }
     .icon-button {
-      padding: 4px 8px;
-      cursor: pointer;
-      width: auto !important;  /* Override the 100% width */
+      min-width: 30px !important;
+      padding: 4px !important;
     }
     #api-key-status {
       font-size: 0.9em;
@@ -79,9 +78,9 @@
       margin-top: 0;
       margin-bottom: 10px;
     }
-    /* Make the API key input not too wide */
-    #claude-api-key {
-      width: 120px;
+    /* Make the API key inputs not too wide */
+    #claude-api-key, #gemini-api-key {
+      width: 80px;
     }
   </style>
 </head>
@@ -100,10 +99,20 @@
       <label for="claude-api-key">Claude API Key:</label>
       <input type="password" id="claude-api-key" placeholder="sk-...">
       <button id="save-api-key">Save</button>
-      <button id="show-key" class="icon-button">👁️</button>
+      <button id="show-key">Show</button>
+    </div>
+    <div class="input-group">
+      <label for="gemini-api-key">Gemini API Key:</label>
+      <input type="password" id="gemini-api-key" placeholder="AI...">
+      <button id="save-gemini-key">Save</button>
+      <button id="show-gemini-key">Show</button>
+      <button id="test-gemini-key">Test</button>
     </div>
     <div id="api-key-status" class="status"></div>
   </div>
+  <script src="shared/llm/api/llm-api.js"></script>
+  <script src="shared/llm/api/gemini_api.js"></script>
+  <script src="linkify/linkify-controller.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

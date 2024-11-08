@@ -4,83 +4,183 @@ console.log("Transform controller loading"); // todo remove
 
 class TransformController {
     constructor() {
-        this.claudeApi = new window.ClaudeApi();
-        console.log("Transform controller constructor called"); // todo remove
+        this.api = new window.GeminiApi();
+        this.rules = {
+            transformationRules: [
+                {
+                    "priority": 1,
+                    "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS"
+                },
+                {
+                    "priority": 2,
+                    "description": "Expand common abbreviations (e.g., 'idk' to 'I don't know', 'abr' to 'abbreviation')"
+                },
+                {
+                    "priority": 3,
+                    "description": "Remove excessive whitespace and newlines while preserving paragraph breaks"
+                },
+                {
+                    "priority": 4,
+                    "description": "Preserve @mentions, hashtags, and URLs exactly as written"
+                },
+                {
+                    "id": "fix-punctuation",
+                    "description": "Correct obvious punctuation errors, including proper comma usage",
+                    "enabled": true,
+                    "priority": 5
+                },
+                {
+                    "id": "clean-mentions",
+                    "description": "Remove extra line breaks before and after @mentions",
+                    "enabled": true,
+                    "priority": 6
+                },
+                {
+                    "id": "format-lists",
+                    "description": "Convert informal numbered lists into proper HTML ordered lists",
+                    "enabled": true,
+                    "priority": 7
+                }
+            ]
+        };
+        console.log("Transform controller initialized with API");
         
-        // Set up message receiver
         window.addEventListener('message', async (event) => {
-            // Only accept messages from our own window
             if (event.source !== window) return;
             if (event.data.type !== 'transform-text') return;
             
-            console.log("Received transform request"); // todo remove
+            console.log("Received transform request");
             await this.handleTransform(event.data.text || window.getSelection().toString());
         });
     }
 
+    async getApiKey(type) {
+        return new Promise((resolve) => {
+            window.postMessage({
+                type: 'get-api-key',
+                service: type
+            }, '*');
+
+            const handler = (event) => {
+                if (event.source !== window) return;
+                if (event.data.type !== 'api-key-response') return;
+                
+                window.removeEventListener('message', handler);
+                resolve(event.data.key);
+            };
+
+            window.addEventListener('message', handler);
+        });
+    }
+
+    async getRules() {
+        return this.rules.transformationRules;
+    }
+
     async handleTransform(selectedText) {
         if (!selectedText) {
-            console.log("No text selected"); // todo remove
+            console.log("No text selected");
             return { success: false, error: "No text selected" };
         }
 
         try {
-            console.log("Starting transformation of text:", selectedText.substring(0, 50) + "..."); // todo remove
+            console.log("\n=== Text Transformation ===");
+            console.log("Input:", selectedText);
+            
+            console.log("Getting API key...");
+            const apiKey = await this.getApiKey('gemini-api-key');
+            if (!apiKey) {
+                throw new Error("No API key found");
+            }
+            console.log("API key received");
 
-            // Get the selected range to preserve formatting
+            console.log("Getting transformation rules...");
+            const rules = await this.getRules();
+            console.log("Rules received:", rules);
+
+            console.log("Calling API for transformation...");
+            const transformedText = await this.api.transformText(selectedText, apiKey, rules);
+            
+            console.log("Output:", transformedText);
+            console.log("=====================\n");
+
+            console.log("Raw transformed text:", JSON.stringify(transformedText));
+            console.log("After initial trim:", JSON.stringify(transformedText.trim()));
+            
+            // 1. Initial text state
+            console.log("=== Source Analysis ===");
+            console.log("1. Original selection:", JSON.stringify(selectedText));
+            
+            // 2. After Gemini transformation
+            console.log("\n2. Gemini Output:");
+            console.log("Raw response:", JSON.stringify(transformedText));
+            console.log("After trim:", JSON.stringify(transformedText.trim()));
+            
+            // 3. DOM state before modification
             const selection = window.getSelection();
             const range = selection.getRangeAt(0);
+            console.log("\n3. DOM Before Change:");
+            console.log("Start container:", range.startContainer);
+            console.log("Start container parent:", range.startContainer.parentNode);
+            console.log("End container:", range.endContainer);
+            console.log("Common ancestor:", range.commonAncestorContainer);
             
-            // Default rules for initial testing
-            const defaultRules = [
-                {
-                    id: "capitalize-proper",
-                    name: "Capitalize Proper Nouns",
-                    description: "Ensure all proper nouns are properly capitalized",
-                    enabled: true
-                },
-                {
-                    id: "expand-abbreviations",
-                    name: "Expand Abbreviations",
-                    description: "Expand common abbreviations except keep 'US', 'UK', 'EU' as is",
-                    enabled: true
+            // 4. Fragment creation
+            const lines = transformedText.trim().split('\n');
+            console.log("\n4. Fragment Creation:");
+            console.log("Split lines:", lines);
+            
+            const fragment = document.createDocumentFragment();
+            lines.forEach((line, index) => {
+                console.log(`Line ${index} nodes:`, {
+                    line: line,
+                    addingBR: index > 0,
+                    hasContent: line.trim().length > 0
+                });
+                
+                if (index > 0) {
+                    fragment.appendChild(document.createElement('br'));
                 }
-            ];
-
-            // Get transformed text from Claude
-            const transformedText = await this.claudeApi.transformText(selectedText, defaultRules);
+                if (line.trim()) {
+                    fragment.appendChild(document.createTextNode(line));
+                }
+            });
             
-            if (!transformedText) {
-                throw new Error("No response from Claude API");
-            }
-
-            console.log("Received transformed text:", transformedText.substring(0, 50) + "..."); // todo remove
-
-            // Replace the selected text while preserving formatting
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = transformedText;
+            // 5. Just before insertion
+            console.log("\n5. Pre-insertion:");
+            console.log("Fragment node count:", fragment.childNodes.length);
+            console.log("Fragment nodes:", Array.from(fragment.childNodes).map(n => ({
+                type: n.nodeType,
+                name: n.nodeName,
+                content: n.textContent
+            })));
             
+            // 6. Insertion
             range.deleteContents();
-            range.insertNode(tempDiv);
-
-            // Clean up any wrapper div that might have been inserted
-            if (tempDiv.parentNode) {
-                while (tempDiv.firstChild) {
-                    tempDiv.parentNode.insertBefore(tempDiv.firstChild, tempDiv);
-                }
-                tempDiv.parentNode.removeChild(tempDiv);
-            }
-
-            console.log("Transform complete"); // todo remove
+            range.insertNode(fragment);
+            
+            // 7. Post-insertion DOM state
+            console.log("\n6. Post-insertion DOM:");
+            const insertedContent = range.commonAncestorContainer;
+            console.log("Inserted content parent:", insertedContent.parentNode);
+            console.log("Parent's children:", Array.from(insertedContent.parentNode.childNodes).map(n => ({
+                type: n.nodeType,
+                name: n.nodeName,
+                content: n.textContent
+            })));
+            
             return { success: true };
 
         } catch (error) {
-            console.error("Transform error:", error); // todo remove
+            console.error("Transform error:", error);
+            window.postMessage({
+                type: 'transform-error',
+                success: false,
+                error: error.message
+            }, '*');
             return { success: false, error: error.message };
         }
     }
 }
 
-// Initialize the controller
-window.transformController = new TransformController();
-console.log("Transform controller loaded"); // todo remove
+window.transformController = new TransformController();console.log("Transform controller loaded"); // todo remove

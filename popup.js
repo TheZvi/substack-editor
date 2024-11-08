@@ -1,34 +1,118 @@
-// Helper function to show status messages
-function showStatus(message, isError = false) {
+// ============================================================================
+// Status and Logging Utilities
+// ============================================================================
+
+/**
+ * Shows a status message in the main status div
+ * @param {string} message - The message to display
+ * @param {boolean} isError - Whether this is an error message
+ * @param {number} duration - How long to show the message (ms), default 3000
+ */
+function showStatus(message, isError = false, duration = 3000) {
+    console.log(`Status: ${message}${isError ? ' (ERROR)' : ''}`);
     const status = document.getElementById('status');
+    if (!status) {
+        console.error('Status element not found!');
+        return;
+    }
+    
     status.textContent = message;
     status.style.display = 'block';
     status.className = isError ? 'error' : 'success';
+    
     setTimeout(() => {
-      status.style.display = 'none';
-    }, 3000);
+        status.style.display = 'none';
+    }, duration);
 }
 
-// Helper function to log removal information
+/**
+ * Shows API-specific status messages
+ * @param {string} message - The message to display
+ * @param {boolean} isError - Whether this is an error message
+ */
+function showApiStatus(message, isError = false) {
+    console.log(`API Status: ${message}${isError ? ' (ERROR)' : ''}`);
+    const apiStatus = document.getElementById('api-key-status');
+    if (!apiStatus) {
+        console.error('API status element not found!');
+        return;
+    }
+    
+    apiStatus.textContent = message;
+    apiStatus.className = `status ${isError ? 'error' : 'success'}`;
+}
+
+/**
+ * Shows removal operation results
+ * @param {string[]} removedItems - Array of removed section titles
+ */
 function showRemovalLog(removedItems) {
+    console.log('Removal log:', removedItems);
     const log = document.getElementById('removal-log');
+    if (!log) {
+        console.error('Removal log element not found!');
+        return;
+    }
+    
     if (removedItems.length > 0) {
-      log.innerHTML = '<strong>Removed sections:</strong><br>' + 
-        removedItems.map(item => `- ${item}`).join('<br>');
-      log.style.display = 'block';
+        log.innerHTML = '<strong>Removed sections:</strong><br>' + 
+            removedItems.map(item => `- ${item}`).join('<br>');
+        log.style.display = 'block';
     } else {
-      log.style.display = 'none';
+        log.style.display = 'none';
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const generateButton = document.getElementById('generate-toc');
-    const removeBlanksButton = document.getElementById('remove-blanks');
-    const wordpressButton = document.getElementById('post-wordpress');
-    const linkifyButton = document.getElementById('linkify');
+/**
+ * Shows linkify operation results
+ * @param {Array} results - Array of linkify results
+ */
+function showLinkifyLog(results) {
+    console.log('Linkify results:', results);
+    const logDiv = document.getElementById('linkify-log');
+    if (!logDiv) {
+        console.error('Linkify log element not found!');
+        return;
+    }
+    
+    if (results.length > 0) {
+        logDiv.innerHTML = '<strong>Links added:</strong><br>' + 
+            results.map(item => `- "${item.text}" ${item.location}`).join('<br>');
+        logDiv.style.display = 'block';
+    } else {
+        logDiv.style.display = 'none';
+    }
+}
 
-    if (generateButton) {
-        generateButton.addEventListener('click', async () => {
+// ============================================================================
+// Core Button Handlers
+// ============================================================================
+
+console.log("Popup script loading...");
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM Content Loaded, about to initialize API management");
+
+    // Initialize button references
+    const buttons = {
+        generateToc: document.getElementById('generate-toc'),
+        removeBlanks: document.getElementById('remove-blanks'),
+        wordpress: document.getElementById('post-wordpress'),
+        linkify: document.getElementById('linkify'),
+        manageLinkifyRules: document.getElementById('manage-linkify-rules')
+    };
+
+    // Verify all buttons exist
+    Object.entries(buttons).forEach(([name, button]) => {
+        if (!button) {
+            console.error(`Button not found: ${name}`);
+        }
+    });
+
+    // Generate TOC Button Handler
+    if (buttons.generateToc) {
+        buttons.generateToc.addEventListener('click', async () => {
+            console.log("TOC button clicked");
             try {
                 const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
                 const results = await chrome.scripting.executeScript({
@@ -44,27 +128,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     showStatus(result?.error || 'Error generating TOC', true);
                 }
             } catch (error) {
+                console.error('TOC generation error:', error);
                 showStatus('Error: ' + error.message, true);
             }
         });
     }
 
-    if (removeBlanksButton) {
-        removeBlanksButton.addEventListener('click', async () => {
+    // Remove Blanks Button Handler
+    if (buttons.removeBlanks) {
+        buttons.removeBlanks.addEventListener('click', async () => {
+            console.log("Remove blanks button clicked");
             try {
                 const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
                 
-                console.log("Executing removeBlanks");
                 const results = await chrome.scripting.executeScript({
                     target: {tabId: tab.id},
                     func: removeBlanks
                 });
                 
-                console.log("Got results:", results);
                 const removedSections = results?.[0]?.result?.removedSections;
-                console.log("Removed sections from results:", removedSections);
+                console.log("Removed sections:", removedSections);
                 
                 if (removedSections && removedSections.length > 0) {
+                    // Update TOC after removing sections
                     await chrome.scripting.executeScript({
                         target: {tabId: tab.id},
                         func: generateTOC,
@@ -77,366 +163,122 @@ document.addEventListener('DOMContentLoaded', () => {
                     showStatus('No blank sections found');
                 }
             } catch (error) {
-                console.log("Error in click handler:", error);
+                console.error("Remove blanks error:", error);
                 showStatus('Error removing blank sections: ' + error.message, true);
             }
         });
     }
 
-    if (wordpressButton) {
-        wordpressButton.addEventListener('click', async () => {
+    // WordPress Button Handler
+    if (buttons.wordpress) {
+        buttons.wordpress.addEventListener('click', async () => {
             console.log("WordPress button clicked");
             try {
                 const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-                if (!tab.url.includes('substack.com')) {
-                    showStatus('This feature only works on Substack pages', true);
-                    return;
-                }
-
-                // Step 1: Extract content
-                showStatus('Extracting content...');
-                console.log("Injecting content extractor");
-                await chrome.scripting.executeScript({
-                    target: {tabId: tab.id},
-                    files: ['extractContents.js']
-                });
-
-                console.log("Calling content extraction");
-                const extractResult = await chrome.scripting.executeScript({
+                const results = await chrome.scripting.executeScript({
                     target: {tabId: tab.id},
                     func: () => {
-                        if (typeof window.extractSubstackContent !== 'function') {
-                            throw new Error('Content extractor not initialized');
+                        // Get the content
+                        const editor = document.querySelector('div[role="article"]') || 
+                                     document.querySelector('[contenteditable="true"]');
+                        if (!editor) {
+                            throw new Error('Could not find editor content');
                         }
-                        return window.extractSubstackContent();
-                    }
-                });
-                
-                console.log("Extract result:", extractResult);
-                if (!extractResult?.[0]?.result?.success) {
-                    throw new Error(extractResult?.[0]?.result?.error || 'Failed to extract content');
-                }
-
-                // Step 2: Format for WordPress
-                showStatus('Formatting for WordPress...');
-                console.log("Injecting WordPress formatter");
-                await chrome.scripting.executeScript({
-                    target: {tabId: tab.id},
-                    files: ['formatters/wordpress-formatter.js']
-                });
-
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                console.log("Calling WordPress formatter");
-                const formatResult = await chrome.scripting.executeScript({
-                    target: {tabId: tab.id},
-                    func: () => {
-                        if (typeof window.formatForWordPress !== 'function') {
-                            throw new Error('WordPress formatter not initialized');
-                        }
-                        return window.formatForWordPress();
+                        return editor.innerHTML;
                     }
                 });
 
-                console.log("Format result:", formatResult);
-                if (!formatResult?.[0]?.result?.success) {
-                    throw new Error(formatResult?.[0]?.result?.error || 'Failed to format content');
+                const content = results?.[0]?.result;
+                if (!content) {
+                    throw new Error('No content found to post');
                 }
 
-                // Add this debug section
-                console.log("Verifying stored content before opening WordPress");
-                const storedContent = await chrome.storage.local.get('wordpress_formatted_content');
-                console.log("Stored content check:", {
-                    hasData: !!storedContent.wordpress_formatted_content,
-                    dataKeys: storedContent.wordpress_formatted_content ? Object.keys(storedContent.wordpress_formatted_content) : null
-                });
-                console.log("Format result:", formatResult);
-                if (!formatResult?.[0]?.result?.success) {
-                    throw new Error(formatResult?.[0]?.result?.error || 'Failed to format content');
-                }
-
-                // Add this verification
-                console.log("Verifying content before opening WordPress");
-                const verifyContent = await chrome.storage.local.get('wordpress_formatted_content');
-                console.log("Content verification:", {
-                    hasData: !!verifyContent.wordpress_formatted_content,
-                    dataKeys: verifyContent.wordpress_formatted_content ? Object.keys(verifyContent.wordpress_formatted_content) : null,
-                    titleLength: verifyContent.wordpress_formatted_content?.title?.length,
-                    contentLength: verifyContent.wordpress_formatted_content?.content?.length
-                });
-
-                // Step 3: Open WordPress and monitor tab
-                const wordpressDomain = `${new URL(tab.url).hostname.split('.')[0]}.wordpress.com`;
-                const wordpressUrl = `https://${wordpressDomain}/wp-admin/post-new.php?classic-editor`;
-                showStatus('Opening WordPress...');
-                console.log("Opening WordPress URL:", wordpressUrl);
-                window.open(wordpressUrl, '_blank');
+                // TODO: Add WordPress posting logic here
+                console.log("Content ready for WordPress:", content.substring(0, 100) + "...");
+                showStatus('Content ready for WordPress');
                 
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                
-                console.log("About to query for WordPress tab");
-                const allTabs = await chrome.tabs.query({});
-                console.log("All tabs after opening WordPress:", allTabs.map(t => ({
-                    url: t.url,
-                    active: t.active,
-                    status: t.status
-                })));
-
-                
-                // Try to find WordPress tab
-                const wpTab = allTabs.find(t => 
-                    t.url && 
-                    t.url.includes('wordpress.com') && 
-                    t.url.includes('post-new.php')
-                );
-                
-                if (wpTab) {
-                    console.log("Found WordPress tab:", {
-                        id: wpTab.id,
-                        url: wpTab.url,
-                        status: wpTab.status
-                    });
-                    
-                    let tabReady = false;
-                    let attempts = 0;
-                    while (!tabReady && attempts < 20) {
-                        const currentTab = await chrome.tabs.get(wpTab.id);
-                        console.log(`Tab status check ${attempts + 1}:`, currentTab.status);
-                        if (currentTab.status === 'complete') {
-                            tabReady = true;
-                        } else {
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                            attempts++;
-                        }
-                    }
-                    console.log("WordPress tab is ready, verifying content still exists");
-                        const finalCheck = await chrome.storage.local.get('wordpress_formatted_content');
-                        console.log("Final content check:", {
-                            hasData: !!finalCheck.wordpress_formatted_content,
-                            dataKeys: finalCheck.wordpress_formatted_content ? Object.keys(finalCheck.wordpress_formatted_content) : null,
-                            titleLength: finalCheck.wordpress_formatted_content?.title?.length,
-                            contentLength: finalCheck.wordpress_formatted_content?.content?.length
-                        })
-                        if (wpTab) {
-                            console.log("Found WordPress tab, waiting for ready state...");
-                            let readyStateChecks = 0;
-                            while (readyStateChecks < 20) {
-                                const currentTab = await chrome.tabs.get(wpTab.id);
-                                console.log(`Tab status check ${readyStateChecks + 1}:`, currentTab.status);
-                                if (currentTab.status === 'complete') {
-                                    break;
-                                }
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                                readyStateChecks++;
-                            }
-        
-                            try {
-                                console.log("Injecting receiver script into WordPress tab");
-                                await chrome.scripting.executeScript({
-                                    target: {tabId: wpTab.id},
-                                    files: ['receivers/wordpress-receiver.js']
-                                });
-                                console.log("Receiver script injected, waiting 1 second...");
-                                await new Promise(resolve => setTimeout(resolve, 1000));
-                                
-                                console.log("Verifying receiver function exists");
-                                const checkResult = await chrome.scripting.executeScript({
-                                    target: {tabId: wpTab.id},
-                                    func: () => ({
-                                        hasFunction: typeof window.insertWordPressContent === 'function',
-                                        documentReady: document.readyState,
-                                        hasTitle: !!document.getElementById('title'),
-                                        hasContent: !!document.getElementById('content')
-                                    })
-                                });
-                                console.log("Function check result:", checkResult?.[0]?.result);
-                            
-                            console.log("Attempting to call insertWordPressContent");
-                            const insertResult = await chrome.scripting.executeScript({
-                                target: {tabId: wpTab.id},
-                                func: () => {
-                                    console.log("Starting content insertion");
-                                    if (typeof window.insertWordPressContent !== 'function') {
-                                        console.error("Function not found!");
-                                        return { success: false, error: "Function not found" };
-                                    }
-                                    return window.insertWordPressContent();
-                                }
-                            });
-                            
-                            console.log("Insert result:", insertResult);
-                            if (insertResult?.[0]?.result?.success) {
-                                showStatus('Content inserted successfully');
-                            } else {
-                                showStatus('Error inserting content', true);
-                            }
-                        } catch (error) {
-                            console.error("Script injection error:", error);
-                            showStatus('Error injecting WordPress receiver: ' + error.message, true);
-                        }
-                    } else {
-                        console.error("WordPress tab never reached ready state");
-                        showStatus('WordPress tab not ready', true);
-                    }
-                } else {
-                    console.error("Could not find WordPress tab");
-                    showStatus('Could not find WordPress tab', true);
-                }
             } catch (error) {
-                console.error('Error:', error);
-                showStatus('Error: ' + error.message, true);
+                console.error("WordPress posting error:", error);
+                showStatus('Error preparing WordPress post: ' + error.message, true);
             }
         });
-    } else {
-        console.error("WordPress button not found in popup");
     }
-  
-    if (linkifyButton) {
-        linkifyButton.addEventListener('click', async () => {
+
+    // Linkify Button Handler
+    if (buttons.linkify) {
+        buttons.linkify.addEventListener('click', async () => {
+            console.log("Linkify button clicked");
             try {
                 const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-                if (!tab.url.includes('substack.com')) {
-                    showStatus('This feature only works on Substack pages', true);
-                    return;
-                }
-    
-                // Clean up previous script
-                await chrome.scripting.executeScript({
-                    target: {tabId: tab.id},
-                    function: () => {
-                        window.linkifyContent = undefined;
-                        window.linkRules = undefined;
-                        window.linkResults = undefined;
-                        // Also remove the observer if it exists
-                        if (window._linkifyObserver) {
-                            window._linkifyObserver.disconnect();
-                            window._linkifyObserver = null;
-                        }
-
-                        // Clean up the style
-                        document.querySelector('#linkify-hover-style')?.remove();
-                    }
-                });
-    
-                // Wait a moment for cleanup
-                await new Promise(resolve => setTimeout(resolve, 100));
-    
-                // Then inject and run
+                
+                // First inject the linkify controller script
                 await chrome.scripting.executeScript({
                     target: {tabId: tab.id},
                     files: ['linkify/linkify-controller.js']
                 });
-    
-                // Then call the function
+                
+                // Then execute linkifyContent
                 const results = await chrome.scripting.executeScript({
                     target: {tabId: tab.id},
-                    function: async () => {
-                        if (typeof window.linkifyContent !== 'function') {
-                            console.error('Linkify content function not found');
-                            return { success: false, error: 'Linkify functionality not initialized' };
-                        }
-                        return await window.linkifyContent();
-                    }
+                    func: () => window.linkifyContent()
                 });
-    
-                // ... rest of handler ...
-
-                const result = results?.[0]?.result;
-                if (result?.success) {
-                    const linkCount = result.results.length;
-                    if (linkCount > 0) {
-                        showStatus(`Added ${linkCount} link${linkCount === 1 ? '' : 's'}`);
-                        const logDiv = document.getElementById('linkify-log');
-                        logDiv.innerHTML = '<strong>Links added:</strong><br>' + 
-                            result.results.map(item => 
-                                `- "${item.text}" ${item.location}`
-                            ).join('<br>');
-                        logDiv.style.display = 'block';
-                    } else {
-                        showStatus('No matching text found to link');
+                
+                const linkifyResults = results?.[0]?.result;
+                console.log("Linkify results:", linkifyResults);
+                
+                if (linkifyResults?.success) {
+                    showStatus('Content linkified successfully');
+                    if (linkifyResults.links) {
+                        showLinkifyLog(linkifyResults.links);
                     }
                 } else {
-                    showStatus(result?.error || 'Error adding links', true);
+                    showStatus(linkifyResults?.error || 'Error linkifying content', true);
                 }
             } catch (error) {
-                console.error('Error in linkify handler:', error);
+                console.error("Linkify error:", error);
                 showStatus('Error: ' + error.message, true);
             }
         });
     }
 
-    const manageLinkifyRulesButton = document.getElementById('manage-linkify-rules');
-    if (manageLinkifyRulesButton) {
-        manageLinkifyRulesButton.addEventListener('click', () => {
-            chrome.tabs.create({
-                url: chrome.runtime.getURL('linkify/ui/manage-linkify-rules.html')
+    // Manage Linkify Rules Button Handler
+    if (buttons.manageLinkifyRules) {
+        buttons.manageLinkifyRules.addEventListener('click', () => {
+            console.log("Manage rules button clicked");
+            try {
+                chrome.runtime.openOptionsPage();
+            } catch (error) {
+                console.error("Error opening options page:", error);
+                showStatus('Error opening rules manager: ' + error.message, true);
+            }
         });
-    });
-// API Key Management
-const apiKeyInput = document.getElementById('claude-api-key');
-const saveKeyButton = document.getElementById('save-api-key');
-const showKeyButton = document.getElementById('show-key');
-const statusDiv = document.getElementById('api-key-status');
-
-// Load existing API key if any
-chrome.storage.local.get('llmApiKeys', function(data) {
-    if (data.llmApiKeys?.ClaudeApi) {
-        apiKeyInput.value = data.llmApiKeys.ClaudeApi;
-        showStatus('API key loaded', false);
-    }
-});
-
-// Toggle key visibility
-showKeyButton.addEventListener('click', () => {
-    if (apiKeyInput.type === 'password') {
-        apiKeyInput.type = 'text';
-        showKeyButton.textContent = '🔒';
-    } else {
-        apiKeyInput.type = 'password';
-        showKeyButton.textContent = '👁️';
-    }
-});
-
-// Save API key
-saveKeyButton.addEventListener('click', async () => {
-    const key = apiKeyInput.value.trim();
-    
-    try {
-        if (!key.startsWith('sk-') || key.length < 10) {
-            throw new Error('Invalid API key format. Should start with "sk-"');
-        }
-
-        const llmApiKeys = (await chrome.storage.local.get('llmApiKeys')).llmApiKeys || {};
-        llmApiKeys.ClaudeApi = key;
-        await chrome.storage.local.set({ llmApiKeys });
-        
-        // After saving, retrieve and show the stored key
-        const stored = await chrome.storage.local.get('llmApiKeys');
-        const storedKey = stored.llmApiKeys.ClaudeApi;
-        showStatus(`API key saved successfully. First 10 chars: ${storedKey.substring(0, 10)}`, false);
-
-    } catch (error) {
-        console.error('API key error:', error);
-        showStatus(error.message, true);
-    }
-});
-
-    function showStatus(message, isError = false) {
-        statusDiv.textContent = message;
-        statusDiv.className = 'status ' + (isError ? 'error' : 'success');
     }
 
-}
+    // Before initializing API Key Management
+    console.log("About to call initializeApiKeyManagement");
+    initializeApiKeyManagement();
+    console.log("Finished calling initializeApiKeyManagement");
 });
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Generates a Table of Contents for the current document
+ * @param {string} postUrl - The URL of the current post
+ * @returns {Object} Result object with success status and error message if applicable
+ */
 function generateTOC(postUrl) {
     try {
         console.log("Starting TOC generation");
         
+        // Get and filter headers
         const headers = document.querySelectorAll('h1, h2, h3, h4');
         let headersArray = Array.from(headers)
             .filter(header => header.textContent.trim() !== "");
         
+        // Filter out interface titles
         const cutoffTitles = ["Preview post", "Post info", "Post settings", "Publish", "Heads up!"];
         const cutoffIndex = headersArray.findIndex(header => 
             cutoffTitles.includes(header.textContent.trim())
@@ -446,9 +288,11 @@ function generateTOC(postUrl) {
         }
         
         if (headersArray.length === 0) {
+            console.log("No headers found");
             return { success: false, error: "No headers found to generate TOC" };
         }
         
+        // Create TOC container
         const tocContainerId = 'generated-toc';
         const labelAsBlank = ' (Blank)';
         
@@ -462,11 +306,13 @@ function generateTOC(postUrl) {
         tocTitle.textContent = 'Table of Contents';
         tocContainer.appendChild(tocTitle);
         
+        // Generate TOC entries
         let tocList = document.createElement('ol');
         headersArray.forEach((header, index) => {
             let id = header.id || `section-${index}`;
             header.id = id;
             
+            // Check if section is empty
             let isEmpty = true;
             let nextSibling = header.nextElementSibling;
             while (nextSibling && !['H1', 'H2', 'H3', 'H4'].includes(nextSibling.tagName)) {
@@ -477,12 +323,14 @@ function generateTOC(postUrl) {
                 nextSibling = nextSibling.nextElementSibling;
             }
             
+            // Create TOC entry
             let tocItem = document.createElement('li');
             let tocLink = document.createElement('a');
             tocLink.textContent = header.textContent.trim() + 
                                (header.textContent.trim().endsWith('.') ? '' : '.') +
                                (isEmpty ? labelAsBlank : '');
             
+            // Handle URLs
             const urlMatch = postUrl.match(/^(https:\/\/[^\/]+)\/publish\/post\/(\d+)/);
             if (urlMatch) {
                 let slug = header.textContent.trim().toLowerCase()
@@ -499,6 +347,7 @@ function generateTOC(postUrl) {
         
         tocContainer.appendChild(tocList);
         
+        // Insert TOC
         console.log("Inserting new TOC");
         const firstHeader = headersArray[0];
         if (firstHeader && firstHeader.parentNode) {
@@ -510,6 +359,7 @@ function generateTOC(postUrl) {
             if (editor) {
                 editor.prepend(tocContainer);
             } else {
+                console.error("Could not find location to insert TOC");
                 return { success: false, error: "Could not find location to insert TOC" };
             }
         }
@@ -523,10 +373,16 @@ function generateTOC(postUrl) {
     }
 }
 
-async function removeBlanks() {
+/**
+ * Removes blank sections from the document
+ * @returns {Object} Object containing array of removed section titles
+ */
+function removeBlanks() {
     try {
         console.log("Starting removeBlanks");
         const removedSections = [];
+        
+        // Get and filter headers
         const headers = document.querySelectorAll('h1, h2, h3, h4');
         console.log("Found headers:", headers.length);
         
@@ -542,10 +398,12 @@ async function removeBlanks() {
                     
         console.log("Filtered headers:", headersArray.length);
     
+        // Check each section for content
         headersArray.forEach(header => {
             console.log("Checking header:", header.textContent);
             let isEmpty = true;
             let nextSibling = header.nextElementSibling;
+            
             while (nextSibling && !['H1', 'H2', 'H3', 'H4'].includes(nextSibling.tagName)) {
                 if (nextSibling.textContent.trim() !== "") {
                     isEmpty = false;
@@ -554,6 +412,7 @@ async function removeBlanks() {
                 nextSibling = nextSibling.nextElementSibling;
             }
     
+            // Remove empty sections
             if (isEmpty) {
                 console.log("Found empty section:", header.textContent);
                 removedSections.push(header.textContent.trim());
@@ -568,11 +427,146 @@ async function removeBlanks() {
         });
     
         console.log("Removed sections:", removedSections);
-        console.log("Removed sections length:", removedSections.length);
-        
         return { removedSections };
+        
     } catch (e) {
         console.error("Error in removeBlanks:", e);
         return { removedSections: [] };
+    }
+}
+
+// ============================================================================
+// API Key Management
+// ============================================================================
+
+function initializeApiKeyManagement() {
+    console.log("Inside initializeApiKeyManagement");
+    console.log("Looking for elements:", {
+        claudeKey: !!document.getElementById('claude-api-key'),
+        geminiKey: !!document.getElementById('gemini-api-key'),
+        testButton: !!document.getElementById('test-gemini-key')
+    });
+
+    // Claude API Key Management
+    const claudeElements = {
+        input: document.getElementById('claude-api-key'),
+        saveButton: document.getElementById('save-api-key'),
+        showButton: document.getElementById('show-key')
+    };
+
+    // Gemini API Key Management
+    const geminiElements = {
+        input: document.getElementById('gemini-api-key'),
+        saveButton: document.getElementById('save-gemini-key'),
+        showButton: document.getElementById('show-gemini-key'),
+        testButton: document.getElementById('test-gemini-key')
+    };
+
+    // Verify all elements exist
+    ['Claude', 'Gemini'].forEach(api => {
+        const elements = api === 'Claude' ? claudeElements : geminiElements;
+        Object.entries(elements).forEach(([name, element]) => {
+            if (!element) {
+                console.error(`${api} ${name} element not found!`);
+            }
+        });
+    });
+
+    // Load existing API keys
+    loadApiKeys();
+
+    // Claude API Event Listeners
+    if (claudeElements.saveButton) {
+        claudeElements.saveButton.addEventListener('click', async () => {
+            console.log("Saving Claude API key");
+            try {
+                const key = claudeElements.input.value.trim();
+                await chrome.storage.local.set({ 'claude-api-key': key });
+                showApiStatus('Claude API key saved successfully');
+            } catch (error) {
+                console.error("Error saving Claude API key:", error);
+                showApiStatus('Error saving Claude API key', true);
+            }
+        });
+    }
+
+    if (claudeElements.showButton) {
+        claudeElements.showButton.addEventListener('click', () => {
+            console.log("Toggling Claude API key visibility");
+            const input = claudeElements.input;
+            input.type = input.type === 'password' ? 'text' : 'password';
+            claudeElements.showButton.textContent = input.type === 'password' ? 'Show' : 'Hide';
+        });
+    }
+
+    // Gemini API Event Listeners
+    if (geminiElements.saveButton) {
+        geminiElements.saveButton.addEventListener('click', async () => {
+            console.log("Saving Gemini API key");
+            try {
+                const key = geminiElements.input.value.trim();
+                await chrome.storage.local.set({ 'gemini-api-key': key });
+                showApiStatus('Gemini API key saved successfully');
+            } catch (error) {
+                console.error("Error saving Gemini API key:", error);
+                showApiStatus('Error saving Gemini API key', true);
+            }
+        });
+    }
+
+    if (geminiElements.showButton) {
+        geminiElements.showButton.addEventListener('click', () => {
+            console.log("Toggling Gemini API key visibility");
+            const input = geminiElements.input;
+            input.type = input.type === 'password' ? 'text' : 'password';
+            geminiElements.showButton.textContent = input.type === 'password' ? 'Show' : 'Hide';
+        });
+    }
+
+    if (geminiElements.testButton) {
+        geminiElements.testButton.addEventListener('click', async () => {
+            console.log("Test button clicked");
+            try {
+                console.log("Testing Gemini API connection");
+                showApiStatus('Testing Gemini API connection...');
+                console.log("LLMApi available?", typeof window.LLMApi);
+                console.log("GeminiApi available?", typeof window.GeminiApi);
+                const geminiApi = new GeminiApi();
+                console.log("GeminiApi instance created");
+                const result = await geminiApi.testConnection();
+                console.log("Test connection result:", result);
+                
+                if (result.success) {
+                    showApiStatus('Gemini API connection successful!');
+                } else {
+                    showApiStatus(`Gemini API test failed: ${result.error}`, true);
+                }
+            } catch (error) {
+                console.error('Error testing Gemini API:', error);
+                showApiStatus(`Error: ${error.message}`, true);
+            }
+        });
+    }
+}
+
+async function loadApiKeys() {
+    console.log("Loading saved API keys");
+    try {
+        const result = await chrome.storage.local.get(['claude-api-key', 'gemini-api-key']);
+        
+        const claudeInput = document.getElementById('claude-api-key');
+        if (claudeInput && result['claude-api-key']) {
+            claudeInput.value = result['claude-api-key'];
+            console.log("Claude API key loaded");
+        }
+
+        const geminiInput = document.getElementById('gemini-api-key');
+        if (geminiInput && result['gemini-api-key']) {
+            geminiInput.value = result['gemini-api-key'];
+            console.log("Gemini API key loaded");
+        }
+    } catch (error) {
+        console.error("Error loading API keys:", error);
+        showApiStatus('Error loading API keys', true);
     }
 }

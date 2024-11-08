@@ -18,16 +18,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Handle communication between page scripts and chrome.storage
 window.addEventListener('message', async (event) => {
-   console.log("Content script received message:", event.data); // todo remove
+   console.log("Content script received message:", event.data);
    if (event.source !== window) return;
    
    if (event.data.type === 'get-api-key') {
-       const result = await chrome.storage.local.get('llmApiKeys');
+       const result = await chrome.storage.local.get(null);
+       console.log('All stored keys:', Object.keys(result));
+       
+       const keyMap = {
+           'gemini-api-key': 'gemini-api-key',
+           'claude-api-key': 'claude-api-key'
+       };
+       
+       const storageKey = keyMap[event.data.service];
+       const apiKey = result[storageKey];
+       console.log('Retrieving API key for:', event.data.service, 'using storage key:', storageKey);
+       
        window.postMessage({
            type: 'api-key-response',
-           key: result.llmApiKeys?.[event.data.service]
+           key: apiKey,
+           success: true
        }, '*');
-       console.log('Retrieving API key for:', event.data.service); // todo remove
    }
    else if (event.data.type === 'set-api-key') {
        const result = await chrome.storage.local.get('llmApiKeys');
@@ -35,61 +46,49 @@ window.addEventListener('message', async (event) => {
        llmApiKeys[event.data.service] = event.data.key;
        await chrome.storage.local.set({ llmApiKeys });
    }
-   else if (event.data.type === 'claude-api-request') {
+   else if (event.data.type === 'claude-api-request' || event.data.type === 'gemini-api-request') {
        try {
-           console.log("Forwarding API request to background"); // todo remove
            const response = await chrome.runtime.sendMessage({
-               action: 'claude-api-request',
+               action: event.data.type,
                endpoint: event.data.endpoint,
                payload: event.data.payload,
                options: event.data.options
            });
-           console.log("Got response from background:", response); // todo remove
+
            window.postMessage({
-               type: 'claude-api-response',
-               response: response || { success: false, error: 'No response from background' }
+               type: event.data.type.replace('request', 'response'),
+               response: response
            }, '*');
        } catch (error) {
-           console.error("Error in content script:", error); // todo remove
            window.postMessage({
-               type: 'claude-api-response',
-               response: { success: false, error: error.message || 'Error in content script' }
+               type: event.data.type.replace('request', 'response'),
+               error: error.message
            }, '*');
        }
    }
 });
 
-function loadTransformScripts() {
-   console.log("Loading transform scripts"); // todo remove
-   
-   // Load config first
-   const configScript = document.createElement('script');
-   configScript.src = chrome.runtime.getURL('shared/llm/config/api-keys.local.js');
-   document.head.appendChild(configScript);
+async function loadTransformScripts() {
+    try {
+        // Load scripts in sequence
+        await loadScript('shared/llm/config/api-keys.local.js');
+        await loadScript('shared/llm/api/base-api.js');
+        await loadScript('shared/llm/api/gemini_api.js');
+        await loadScript('shared/llm/api/claude_api.js');
+        await loadScript('features/text-transform/transform-controller.js');
+    } catch (error) {
+        console.error('Error loading transform scripts:', error);
+    }
+}
 
-   // Then load base API
-   configScript.onload = () => {
-       console.log("Config loaded, loading base API"); // todo remove
-       const baseApiScript = document.createElement('script');
-       baseApiScript.src = chrome.runtime.getURL('shared/llm/api/base-api.js');
-       document.head.appendChild(baseApiScript);
-
-       // Load Claude API after base API
-       baseApiScript.onload = () => {
-           console.log("Base API loaded, loading Claude API"); // todo remove
-           const claudeApiScript = document.createElement('script');
-           claudeApiScript.src = chrome.runtime.getURL('shared/llm/api/claude-api.js');
-           document.head.appendChild(claudeApiScript);
-
-           // Load transform controller after APIs
-           claudeApiScript.onload = () => {
-               console.log("Claude API loaded, loading transform controller"); // todo remove
-               const transformScript = document.createElement('script');
-               transformScript.src = chrome.runtime.getURL('features/text-transform/transform-controller.js');
-               document.head.appendChild(transformScript);
-           };
-       };
-   };
+function loadScript(path) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = chrome.runtime.getURL(path);
+        script.onload = () => resolve();
+        script.onerror = (error) => reject(error);
+        document.head.appendChild(script);
+    });
 }
 
 // Call the loading function

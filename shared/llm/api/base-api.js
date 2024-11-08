@@ -1,81 +1,72 @@
 // shared/llm/api/base-api.js
-window.LLMApi = class {
+class LLMApi {
     constructor(config = {}) {
-        if (new.target === window.LLMApi) {
-            throw new Error('LLMApi is an abstract class and cannot be instantiated directly');
-        }
-        
         this.config = {
+            apiVersion: 'v1',
+            model: 'default',
             maxRetries: 3,
-            retryDelay: 1000,
-            timeout: 30000,
             ...config
         };
     }
 
-    // Template for API call with retry logic and error handling
-    async makeApiCall(endpoint, payload, options = {}) {
-        let lastError;
-        for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
-            try {
-                const response = await this._makeRequest(endpoint, payload, options);
-                return await this._handleResponse(response);
-            } catch (error) {
-                lastError = error;
-                if (!this._shouldRetry(error, attempt)) {
-                    break;
-                }
-                await new Promise(resolve => setTimeout(resolve, this.config.retryDelay * attempt));
-            }
+    async transformText(text, apiKey) {
+        if (!apiKey) {
+            throw new Error('API key is required');
         }
-        throw new Error(`API call failed after ${this.config.maxRetries} attempts: ${lastError.message}`);
+
+        try {
+            // Load rules
+            const response = await fetch(chrome.runtime.getURL('shared/llm/api/default-rules.json'));
+            const rulesData = await response.json();
+            
+            const systemPrompt = this._buildTransformationPrompt(text, rulesData.transformationRules);
+            return await this._makeTransformationRequest(systemPrompt, apiKey);
+        } catch (error) {
+            console.error("Text transformation failed:", error);
+            throw error;
+        }
     }
 
-    // Protected methods to be implemented by specific API classes
+    _buildTransformationPrompt(text, rules) {
+        return `You are a text formatting assistant. Apply these transformations in order:
+${rules.map(rule => `${rule.priority}. ${rule.description}`).join('\n')}
+
+IMPORTANT CONSTRAINTS:
+    - Return ONLY the transformed text
+    - Make no other changes beyond what the rules specify
+    - Add no explanatory text or comments
+    - Preserve all HTML formatting exactly
+
+Text to transform:
+${text}`;
+    }
+
+    async makeApiCall(endpoint, payload, options, attempt = 1) {
+        try {
+            const response = await this._makeRequest(endpoint, payload, options);
+            return this._handleResponse(response);
+        } catch (error) {
+            if (attempt < this.config.maxRetries) {
+                console.log(`Attempt ${attempt} failed, retrying...`);
+                return this.makeApiCall(endpoint, payload, options, attempt + 1);
+            }
+            throw new Error(`API call failed after ${attempt} attempts: ${error.message}`);
+        }
+    }
+
+    // These methods must be implemented by child classes
+    async _makeTransformationRequest(prompt, apiKey) {
+        throw new Error('_makeTransformationRequest must be implemented by child class');
+    }
+
     async _makeRequest(endpoint, payload, options) {
-        throw new Error('_makeRequest must be implemented by subclass');
+        throw new Error('_makeRequest must be implemented by child class');
     }
 
     async _handleResponse(response) {
-        throw new Error('_handleResponse must be implemented by subclass');
+        throw new Error('_handleResponse must be implemented by child class');
     }
-
-    _shouldRetry(error, attempt) {
-        // Default retry condition for common transient errors
-        const retryableStatuses = [408, 429, 500, 502, 503, 504];
-        return attempt < this.config.maxRetries && 
-               (error.status && retryableStatuses.includes(error.status));
-    }
-
-    // Utility methods for API key management
-    async _getApiKey() {
-        // Temporarily bypass storage and message passing
-        const hardcodedKey = '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';
-        return hardcodedKey;
-    }
-
-    async _setApiKey(apiKey) {
-        window.postMessage({ 
-            type: 'set-api-key', 
-            service: this.constructor.name,
-            key: apiKey 
-        }, '*');
-    }
-
-    // Validation methods
-    _validateConfig() {
-        const requiredFields = this._getRequiredConfigFields();
-        for (const field of requiredFields) {
-            if (!this.config[field]) {
-                throw new Error(`Missing required configuration field: ${field}`);
-            }
-        }
-    }
-
-    _getRequiredConfigFields() {
-        return ['maxRetries', 'retryDelay', 'timeout'];
-    }
-};
+}
 
 window.LLMApi = LLMApi;
 console.log("Base LLM API loaded");

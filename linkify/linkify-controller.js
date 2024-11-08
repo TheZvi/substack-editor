@@ -1,7 +1,6 @@
 // linkify-controller.js
 
 // Global state to track our rules and results
-window.linkRules = null;
 window.linkResults = [];
 
 // Load our rules from the default-rules.json file
@@ -15,22 +14,8 @@ async function loadRules() {
         
         // Filter out disabled rules and combine with user rules
         const defaultRules = data.linkRules.filter(rule => !overrides[rule.target]?.disabled);
-        linkRules = [...defaultRules, ...userRules];
+        return [...defaultRules, ...userRules];
         
-        // Only log user rules and rules containing "Battle of the Board"
-        console.log("User rules:", userRules.map(r => ({
-            target: r.target,
-            url: r.url,
-            matchType: r.matchType,
-            wholeWord: r.wholeWord
-        })));
-        console.log("Active default rules matching test:", 
-            defaultRules
-                .filter(r => r.target.includes("Battle of the Board"))
-                .map(r => ({ target: r.target, url: r.url }))
-        );
-        
-        return linkRules;
     } catch (error) {
         console.error('Error loading link rules:', error);
         return null;
