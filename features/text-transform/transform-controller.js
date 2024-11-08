@@ -125,15 +125,36 @@ class TransformController {
             console.log("End container:", range.endContainer);
             console.log("Common ancestor:", range.commonAncestorContainer);
             
-            // 4. Direct insertion
-            console.log("\n4. Direct insertion:");
-            console.log("Text to insert:", transformedText);
+            // 4. Fragment creation
+            // Split on double newlines to preserve paragraphs
+            const paragraphs = transformedText.trim().split(/\n\s*\n/);
+            console.log("\n4. Fragment Creation:");
+            console.log("Split paragraphs:", paragraphs);
             
+            const fragment = document.createDocumentFragment();
+            paragraphs.forEach(para => {
+                if (para.trim()) {  // Only process non-empty paragraphs
+                    const p = document.createElement('p');
+                    p.textContent = para.trim();
+                    fragment.appendChild(p);
+                }
+            });
+            
+            // 5. Just before insertion
+            console.log("\n5. Pre-insertion:");
+            console.log("Fragment node count:", fragment.childNodes.length);
+            console.log("Fragment nodes:", Array.from(fragment.childNodes).map(n => ({
+                type: n.nodeType,
+                name: n.nodeName,
+                content: n.textContent
+            })));
+            
+            // 6. Insertion
             range.deleteContents();
-            range.insertNode(document.createTextNode(transformedText));
+            range.insertNode(fragment);
             
-            // 5. Post-insertion DOM state
-            console.log("\n5. Post-insertion DOM:");
+            // 7. Post-insertion DOM state
+            console.log("\n6. Post-insertion DOM:");
             const insertedContent = range.commonAncestorContainer;
             console.log("Inserted content parent:", insertedContent.parentNode);
             console.log("Parent's children:", Array.from(insertedContent.parentNode.childNodes).map(n => ({
