@@ -62,15 +62,60 @@ class TransformController {
         });
     }
 
-    async handleTransform(selectedText) {
-        if (!selectedText) {
-            console.log("No text selected");
-            return { success: false, error: "No text selected" };
-        }
-
+    async handleTransform(inputText) {
         try {
+            console.log("Starting handleTransform with:", {
+                hasInputText: !!inputText,
+                inputTextType: typeof inputText
+            });
+
+            const userSelection = window.getSelection();
+            console.log("Selection:", {
+                hasSelection: !!userSelection,
+                rangeCount: userSelection?.rangeCount
+            });
+
+            if (!userSelection || userSelection.rangeCount === 0) {
+                console.log("No valid selection found");
+                return { success: false, error: "No valid selection" };
+            }
+
+            const selectionRange = userSelection.getRangeAt(0);
+            const contentFragment = selectionRange.cloneContents();
+            
+            console.log("Content Fragment:", {
+                hasFragment: !!contentFragment,
+                nodeType: contentFragment?.nodeType,
+                childNodes: contentFragment?.childNodes?.length,
+                innerHTML: contentFragment?.innerHTML
+            });
+
+            // Use either the input text or the selection content
+            let processedText = inputText || contentFragment.innerHTML;
+
+            if (!processedText) {
+                console.log("No text selected");
+                return { success: false, error: "No text selected" };
+            }
+
+            console.log("LINK CHECK 1 - Selection:", {
+                hasProcessedText: !!processedText,
+                processedTextType: typeof processedText,
+                rawText: processedText,
+                hasHTML: processedText.includes('<'),
+                links: Array.from(contentFragment.querySelectorAll('a')).map(a => ({
+                    text: a.textContent,
+                    href: a.href
+                }))
+            });
+
+            console.log("Initial text with HTML:", {
+                text: processedText,
+                html: window.getSelection().getRangeAt(0).cloneContents().innerHTML
+            });
+
             console.log("\n=== Text Transformation ===");
-            console.log("Input:", selectedText);
+            console.log("Input:", processedText);
             
             console.log("Getting API key...");
             const apiKey = await this.getApiKey('gemini-api-key');
@@ -83,9 +128,33 @@ class TransformController {
             const rules = await this.getRules();
             console.log("Rules received:", rules);
 
+            console.log("LINK CHECK 2 - Pre-Gemini:", {
+                textToSend: processedText,
+                hasLinks: processedText.includes('<a'),
+                linkElements: processedText.match(/<a[^>]*>.*?<\/a>/g)
+            });
+
+            console.log("Sending to Gemini:", {
+                text: processedText,
+                containsLinks: processedText.includes('href='),
+                htmlTags: processedText.match(/<[^>]+>/g)
+            });
+
             console.log("Calling API for transformation...");
-            const transformedText = await this.api.transformText(selectedText, apiKey, rules);
+            const transformedText = await this.api.transformText(processedText, apiKey, rules);
             
+            console.log("LINK CHECK 3 - Post-Gemini:", {
+                transformedText,
+                hasLinks: transformedText.includes('<a'),
+                linkElements: transformedText.match(/<a[^>]*>.*?<\/a>/g)
+            });
+
+            console.log("Received from Gemini:", {
+                text: transformedText,
+                containsLinks: transformedText.includes('href='),
+                htmlTags: transformedText.match(/<[^>]+>/g)
+            });
+
             console.log("Output:", transformedText);
             console.log("=====================\n");
 
@@ -94,7 +163,7 @@ class TransformController {
             
             // 1. Initial text state
             console.log("=== Source Analysis ===");
-            console.log("1. Original selection:", JSON.stringify(selectedText));
+            console.log("1. Original selection:", JSON.stringify(processedText));
             
             // 2. After Gemini transformation
             console.log("\n2. Gemini Output:");
@@ -118,9 +187,9 @@ class TransformController {
             
             const fragment = document.createDocumentFragment();
             paragraphs.forEach(para => {
-                if (para.trim()) {  // Only process non-empty paragraphs
+                if (para.trim()) {
                     const p = document.createElement('p');
-                    p.textContent = para.trim();
+                    p.innerHTML = para.trim();
                     fragment.appendChild(p);
                 }
             });
