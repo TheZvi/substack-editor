@@ -7,6 +7,7 @@ class TransformController {
         this.api = new window.GeminiApi();
         this.rules = {
             transformationRules: [
+                { "priority": 0, "description": "CRITICAL: NEVER MODIFY ANY OF THESE: 1) Never expand 'ASI', 'AGI', 'AI', 'GPT', 'LLM', or 'NLP' into full words 2) Never change single quotes (') to double quotes (\") or vice versa. Leave all quotes exactly as they appear."                 },
                 { "priority": 1, "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS" },
                 { "priority": 2, "description": "Expand all abbreviations and make any other fixes according to the New York Times style guide" },
                 { "priority": 3, "description": "Remove excessive whitespace and newlines while preserving paragraph breaks" },
@@ -64,6 +65,30 @@ class TransformController {
 
     async handleTransform(inputText) {
         try {
+            // If no text is pre-selected, auto-select based on context
+            if (!inputText) {
+                const selection = window.getSelection();
+                const range = document.createRange();
+                let container = selection.anchorNode;
+
+                // Find the nearest blockquote or paragraph
+                while (container && !['BLOCKQUOTE', 'P'].includes(container.nodeName)) {
+                    container = container.parentNode;
+                }
+
+                if (container) {
+                    range.selectNodeContents(container);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    
+                    // Get the selected content
+                    const contentFragment = range.cloneContents();
+                    const selectionDiv = document.createElement('div');
+                    selectionDiv.appendChild(contentFragment.cloneNode(true));
+                    inputText = selectionDiv.innerHTML;
+                }
+            }
+
             console.log("Starting handleTransform with:", {
                 hasInputText: !!inputText,
                 inputTextType: typeof inputText
@@ -83,29 +108,33 @@ class TransformController {
             const selectionRange = userSelection.getRangeAt(0);
             const contentFragment = selectionRange.cloneContents();
             
+            // Create a temporary div to get HTML
+            const selectionDiv = document.createElement('div');
+            selectionDiv.appendChild(contentFragment.cloneNode(true));
+            let processedText = selectionDiv.innerHTML;
+
             console.log("Content Fragment:", {
                 hasFragment: !!contentFragment,
                 nodeType: contentFragment?.nodeType,
                 childNodes: contentFragment?.childNodes?.length,
-                innerHTML: contentFragment?.innerHTML
+                innerHTML: contentFragment?.innerHTML,
+                selectionDivHTML: selectionDiv.innerHTML
             });
 
-            // Use either the input text or the selection content
-            let processedText = inputText || contentFragment.innerHTML;
-
             if (!processedText) {
-                console.log("No text selected");
-                return { success: false, error: "No text selected" };
+                console.log("No content found in selection or input");
+                return { success: false, error: "No content to process" };
             }
 
             console.log("LINK CHECK 1 - Selection:", {
                 hasProcessedText: !!processedText,
                 processedTextType: typeof processedText,
                 rawText: processedText,
-                hasHTML: processedText.includes('<'),
+                hasHTML: processedText?.includes('<'),
                 links: Array.from(contentFragment.querySelectorAll('a')).map(a => ({
                     text: a.textContent,
-                    href: a.href
+                    href: a.href,
+                    fullHTML: a.outerHTML
                 }))
             });
 
@@ -128,6 +157,12 @@ class TransformController {
             const rules = await this.getRules();
             console.log("Rules received:", rules);
 
+            // Add rule to preserve HTML links
+            rules.unshift({ 
+                priority: -1,  // Even higher priority
+                description: "MOST IMPORTANT: Preserve these exactly: 1) All acronyms 'ASI', 'AGI', 'AI', 'GPT', 'LLM', 'NLP' must stay as acronyms 2) All quote marks must stay exactly as they are (don't change ' to \" or vice versa)"
+            });
+
             console.log("LINK CHECK 2 - Pre-Gemini:", {
                 textToSend: processedText,
                 hasLinks: processedText.includes('<a'),
@@ -143,16 +178,22 @@ class TransformController {
             console.log("Calling API for transformation...");
             const transformedText = await this.api.transformText(processedText, apiKey, rules);
             
-            console.log("LINK CHECK 3 - Post-Gemini:", {
-                transformedText,
-                hasLinks: transformedText.includes('<a'),
-                linkElements: transformedText.match(/<a[^>]*>.*?<\/a>/g)
-            });
+            let processedHtml = transformedText;
+            if (!processedHtml.includes('<p>')) {
+                // If we don't have paragraph tags, wrap the text
+                processedHtml = `<p>${processedHtml}</p>`;
+            }
 
+            console.log("LINK CHECK 3 - Post-Gemini:", {
+                transformedText: processedHtml,
+                hasLinks: processedHtml.includes('<a'),
+                linkElements: processedHtml.match(/<a[^>]*>.*?<\/a>/g)
+            });
+            
             console.log("Received from Gemini:", {
-                text: transformedText,
-                containsLinks: transformedText.includes('href='),
-                htmlTags: transformedText.match(/<[^>]+>/g)
+                text: processedHtml,
+                containsLinks: processedHtml.includes('href='),
+                htmlTags: processedHtml.match(/<[^>]+>/g)
             });
 
             console.log("Output:", transformedText);
@@ -180,18 +221,26 @@ class TransformController {
             console.log("Common ancestor:", range.commonAncestorContainer);
             
             // 4. Fragment creation
-            // Split on double newlines to preserve paragraphs
-            const paragraphs = transformedText.trim().split(/\n\s*\n/);
-            console.log("\n4. Fragment Creation:");
-            console.log("Split paragraphs:", paragraphs);
-            
+            // Create a temporary div to parse the HTML
+            const outputDiv = document.createElement('div');
+            outputDiv.innerHTML = processedHtml.trim();
+
+            // Split text into paragraphs if needed
+            if (outputDiv.children.length === 0) {
+                const paragraphs = processedHtml.split(/\n\n+/);
+                paragraphs.forEach(para => {
+                    if (para.trim()) {
+                        const p = document.createElement('p');
+                        p.textContent = para.trim();
+                        outputDiv.appendChild(p);
+                    }
+                });
+            }
+
+            // Move each paragraph to the fragment
             const fragment = document.createDocumentFragment();
-            paragraphs.forEach(para => {
-                if (para.trim()) {
-                    const p = document.createElement('p');
-                    p.innerHTML = para.trim();
-                    fragment.appendChild(p);
-                }
+            Array.from(outputDiv.children).forEach(child => {
+                fragment.appendChild(child.cloneNode(true));
             });
             
             // 5. Just before insertion

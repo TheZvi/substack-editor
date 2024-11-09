@@ -10,6 +10,18 @@ class GeminiApi extends LLMApi {
     }
 
     async transformText(text, apiKey, rules) {
+        const prompt = `STRICT REQUIREMENTS - DO NOT IGNORE:
+1. NEVER expand these acronyms (leave them exactly as is): ASI, AGI, AI, GPT, LLM, NLP
+2. NEVER change quote marks (leave all ' and " exactly as they appear)
+
+Now, transform the following text according to these rules:
+${rules.map(rule => `${rule.priority}. ${rule.description}`).join('\n')}
+
+Text to transform:
+${text}
+
+Return the transformed text directly without any additional commentary or labels.`;
+
         if (!apiKey) {
             throw new Error('API key is required');
         }
@@ -18,27 +30,11 @@ class GeminiApi extends LLMApi {
         }
 
         try {
-            const systemPrompt = this._buildTransformationPrompt(text, rules);
-            return await this._makeTransformationRequest(systemPrompt, apiKey);
+            return await this._makeTransformationRequest(prompt, apiKey);
         } catch (error) {
             console.error("Text transformation failed:", error);
             throw error;
         }
-    }
-
-    _buildTransformationPrompt(text, rules) {
-        const rulesText = rules
-            .map(rule => `${rule.priority}. ${rule.description}`)
-            .join('\n');
-
-        return `
-Please transform the following text according to these rules:
-${rulesText}
-
-Text to transform:
-${text}
-
-Return the transformed text directly without any additional commentary or labels.`;
     }
 
     async _makeTransformationRequest(prompt, apiKey) {
