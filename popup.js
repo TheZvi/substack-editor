@@ -173,36 +173,188 @@ document.addEventListener('DOMContentLoaded', () => {
     if (buttons.wordpress) {
         buttons.wordpress.addEventListener('click', async () => {
             console.log("WordPress button clicked");
-            try {
-                const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-                const results = await chrome.scripting.executeScript({
-                    target: {tabId: tab.id},
-                    func: () => {
-                        // Get the content
-                        const editor = document.querySelector('div[role="article"]') || 
-                                     document.querySelector('[contenteditable="true"]');
-                        if (!editor) {
-                            throw new Error('Could not find editor content');
-                        }
-                        return editor.innerHTML;
+        try {
+            const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+            if (!tab.url.includes('substack.com')) {
+                showStatus('This feature only works on Substack pages', true);
+                return;
+            }
+
+            // Step 1: Extract content
+            showStatus('Extracting content...');
+            console.log("Injecting content extractor");
+            await chrome.scripting.executeScript({
+                target: {tabId: tab.id},
+                files: ['extractContents.js']
+            });
+
+            console.log("Calling content extraction");
+            const extractResult = await chrome.scripting.executeScript({
+                target: {tabId: tab.id},
+                func: () => {
+                    if (typeof window.extractSubstackContent !== 'function') {
+                        throw new Error('Content extractor not initialized');
                     }
+                    return window.extractSubstackContent();
+                }
+            });
+
+            console.log("Extract result:", extractResult);
+            if (!extractResult?.[0]?.result?.success) {
+                throw new Error(extractResult?.[0]?.result?.error || 'Failed to extract content');
+            }
+
+            // Step 2: Format for WordPress
+            showStatus('Formatting for WordPress...');
+            console.log("Injecting WordPress formatter");
+            await chrome.scripting.executeScript({
+                target: {tabId: tab.id},
+                files: ['formatters/wordpress-formatter.js']
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("Calling WordPress formatter");
+            const formatResult = await chrome.scripting.executeScript({
+                target: {tabId: tab.id},
+                func: () => {
+                    if (typeof window.formatForWordPress !== 'function') {
+                        throw new Error('WordPress formatter not initialized');
+                    }
+                    return window.formatForWordPress();
+                }
+            });
+
+            console.log("Format result:", formatResult);
+            if (!formatResult?.[0]?.result?.success) {
+                throw new Error(formatResult?.[0]?.result?.error || 'Failed to format content');
+            }
+
+            // Add this debug section
+            console.log("Verifying stored content before opening WordPress");
+            const storedContent = await chrome.storage.local.get('wordpress_formatted_content');
+            console.log("Stored content check:", {
+                hasData: !!storedContent.wordpress_formatted_content,
+                dataKeys: storedContent.wordpress_formatted_content ? Object.keys(storedContent.wordpress_formatted_content) : null
+            });
+
+            // Add this verification
+            console.log("Verifying content before opening WordPress");
+            const verifyContent = await chrome.storage.local.get('wordpress_formatted_content');
+            console.log("Content verification:", {
+                hasData: !!verifyContent.wordpress_formatted_content,
+                dataKeys: verifyContent.wordpress_formatted_content ? Object.keys(verifyContent.wordpress_formatted_content) : null,
+                titleLength: verifyContent.wordpress_formatted_content?.title?.length,
+                contentLength: verifyContent.wordpress_formatted_content?.content?.length
+            });
+
+            // Step 3: Open WordPress and monitor tab
+            const wordpressDomain = `${new URL(tab.url).hostname.split('.')[0]}.wordpress.com`;
+            const wordpressUrl = `https://${wordpressDomain}/wp-admin/post-new.php?classic-editor`;
+            showStatus('Opening WordPress...');
+            console.log("Opening WordPress URL:", wordpressUrl);
+            window.open(wordpressUrl, '_blank');
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            console.log("About to query for WordPress tab");
+            const allTabs = await chrome.tabs.query({});
+            console.log("All tabs after opening WordPress:", allTabs.map(t => ({
+                url: t.url,
+                active: t.active,
+                status: t.status
+            })));
+
+            // Try to find WordPress tab
+            const wpTab = allTabs.find(t =>
+                t.url &&
+                t.url.includes('wordpress.com') &&
+                t.url.includes('post-new.php')
+            );
+
+            if (wpTab) {
+                console.log("Found WordPress tab:", {
+                    id: wpTab.id,
+                    url: wpTab.url,
+                    status: wpTab.status
                 });
 
-                const content = results?.[0]?.result;
-                if (!content) {
-                    throw new Error('No content found to post');
+                let tabReady = false;
+                let attempts = 0;
+                while (!tabReady && attempts < 20) {
+                    const currentTab = await chrome.tabs.get(wpTab.id);
+                    console.log(`Tab status check ${attempts + 1}:`, currentTab.status);
+                    if (currentTab.status === 'complete') {
+                        tabReady = true;
+                    } else {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        attempts++;
+                    }
                 }
 
-                // TODO: Add WordPress posting logic here
-                console.log("Content ready for WordPress:", content.substring(0, 100) + "...");
-                showStatus('Content ready for WordPress');
-                
-            } catch (error) {
-                console.error("WordPress posting error:", error);
-                showStatus('Error preparing WordPress post: ' + error.message, true);
+                console.log("WordPress tab is ready, verifying content still exists");
+                const finalCheck = await chrome.storage.local.get('wordpress_formatted_content');
+                console.log("Final content check:", {
+                    hasData: !!finalCheck.wordpress_formatted_content,
+                    dataKeys: finalCheck.wordpress_formatted_content ? Object.keys(finalCheck.wordpress_formatted_content) : null,
+                    titleLength: finalCheck.wordpress_formatted_content?.title?.length,
+                    contentLength: finalCheck.wordpress_formatted_content?.content?.length
+                });
+
+                try {
+                    console.log("Injecting receiver script into WordPress tab");
+                    await chrome.scripting.executeScript({
+                        target: {tabId: wpTab.id},
+                        files: ['receivers/wordpress-receiver.js']
+                    });
+                    console.log("Receiver script injected, waiting 1 second...");
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    console.log("Verifying receiver function exists");
+                    const checkResult = await chrome.scripting.executeScript({
+                        target: {tabId: wpTab.id},
+                        func: () => ({
+                            hasFunction: typeof window.insertWordPressContent === 'function',
+                            documentReady: document.readyState,
+                            hasTitle: !!document.getElementById('title'),
+                            hasContent: !!document.getElementById('content')
+                        })
+                    });
+                    console.log("Function check result:", checkResult?.[0]?.result);
+
+                    console.log("Attempting to call insertWordPressContent");
+                    const insertResult = await chrome.scripting.executeScript({
+                        target: {tabId: wpTab.id},
+                        func: () => {
+                            console.log("Starting content insertion");
+                            if (typeof window.insertWordPressContent !== 'function') {
+                                console.error("Function not found!");
+                                return { success: false, error: "Function not found" };
+                            }
+                            return window.insertWordPressContent();
+                        }
+                    });
+
+                    console.log("Insert result:", insertResult);
+                    if (insertResult?.[0]?.result?.success) {
+                        showStatus('Content inserted successfully');
+                    } else {
+                        showStatus('Error inserting content', true);
+                    }
+                } catch (error) {
+                    console.error("Script injection error:", error);
+                    showStatus('Error injecting WordPress receiver: ' + error.message, true);
+                }
+            } else {
+                console.error("Could not find WordPress tab");
+                showStatus('Could not find WordPress tab', true);
             }
-        });
-    }
+        } catch (error) {
+            console.error('Error:', error);
+            showStatus('Error: ' + error.message, true);
+        }
+    });
+}
 
     // Linkify Button Handler
     if (buttons.linkify) {
