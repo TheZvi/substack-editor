@@ -71,13 +71,26 @@ class TransformController {
                 const range = document.createRange();
                 let container = selection.anchorNode;
 
-                // Find the nearest blockquote or paragraph
-                while (container && !['BLOCKQUOTE', 'P'].includes(container.nodeName)) {
-                    container = container.parentNode;
+                // First try to find a blockquote ancestor
+                let blockquote = container;
+                while (blockquote && blockquote.nodeName !== 'BLOCKQUOTE') {
+                    blockquote = blockquote.parentNode;
                 }
 
-                if (container) {
-                    range.selectNodeContents(container);
+                // If we found a blockquote, use that, otherwise fall back to paragraph
+                if (blockquote) {
+                    range.selectNodeContents(blockquote);
+                } else {
+                    // Find the nearest paragraph
+                    while (container && container.nodeName !== 'P') {
+                        container = container.parentNode;
+                    }
+                    if (container) {
+                        range.selectNodeContents(container);
+                    }
+                }
+
+                if (blockquote || container) {
                     selection.removeAllRanges();
                     selection.addRange(range);
                     

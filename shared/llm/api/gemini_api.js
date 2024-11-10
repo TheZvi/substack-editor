@@ -4,17 +4,37 @@ class GeminiApi extends LLMApi {
     constructor(config = {}) {
         super({
             apiVersion: 'v1',
-            model: 'gemini-pro',
+            model: 'gemini-1.5-flash-8b',
             ...config
         });
     }
 
     async transformText(text, apiKey, rules) {
-        const prompt = `STRICT REQUIREMENTS - DO NOT IGNORE:
-1. NEVER expand these acronyms (leave them exactly as is): ASI, AGI, AI, GPT, LLM, NLP
-2. NEVER change quote marks (leave all ' and " exactly as they appear)
+        // Store original quotes and acronyms before transformation
+        const acronyms = [];
+        text.replace(/\b(ASI|AGI|AI|GPT|LLM|NLP)\b/g, (match, p1, offset) => {
+            acronyms.push({ text: p1, offset });
+            return p1;
+        });
 
-Now, transform the following text according to these rules:
+        // More robust quote tracking
+        const quotes = [];
+        let currentIndex = 0;
+        const quoteRegex = /(['"])((?:[^'"\\]|\\.)*?)\1/g;
+        let match;
+        
+        while ((match = quoteRegex.exec(text)) !== null) {
+            quotes.push({
+                fullMatch: match[0],
+                quote: match[1],
+                content: match[2],
+                startIndex: match.index,
+                endIndex: match.index + match[0].length
+            });
+        }
+
+        // Create the prompt
+        const prompt = `Transform the following text according to these rules:
 ${rules.map(rule => `${rule.priority}. ${rule.description}`).join('\n')}
 
 Text to transform:
@@ -22,81 +42,53 @@ ${text}
 
 Return the transformed text directly without any additional commentary or labels.`;
 
-        if (!apiKey) {
-            throw new Error('API key is required');
-        }
-        if (!rules) {
-            throw new Error('Transformation rules are required');
-        }
-
-        try {
-            return await this._makeTransformationRequest(prompt, apiKey);
-        } catch (error) {
-            console.error("Text transformation failed:", error);
-            throw error;
-        }
-    }
-
-    async _makeTransformationRequest(prompt, apiKey) {
         console.log("Making Gemini API request with prompt:", prompt);
-        const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`;
-        
-        const payload = {
-            contents: [{
-                parts: [{
-                    text: prompt
-                }]
-            }],
-            generationConfig: {
-                temperature: 0.1,
-                topK: 1,
-                topP: 1
-            }
-        };
 
-        const options = {
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        };
-
-        const response = await this.makeApiCall(endpoint, payload, options);
-        return response.trim();
-    }
-
-    async _makeRequest(endpoint, payload, options) {
-        console.log("Sending request to Gemini...");
-        const response = await fetch(endpoint, {
+        // Make the API request
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-8b:generateContent?key=${apiKey}`, {
             method: 'POST',
-            headers: options.headers,
-            body: JSON.stringify(payload)
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{
+                        text: prompt
+                    }]
+                }]
+            })
         });
 
+        console.log("Sending request to Gemini...");
+        
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Gemini API error:", errorText);
-            throw new Error(`API request failed: ${response.status} - ${errorText}`);
+            throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
         }
 
+        const data = await response.json();
         console.log("Received response from Gemini");
-        return response.json();
-    }
+        console.log("Processing Gemini response:", data);
 
-    _handleResponse(response) {
-        console.log("Processing Gemini response:", response);
-        
-        if (!response.candidates || !response.candidates[0]?.content?.parts?.[0]?.text) {
-            console.error("Invalid response format:", response);
-            throw new Error('Invalid response format from Gemini API');
-        }
-        
-        const transformedText = response.candidates[0].content.parts[0].text;
+        let transformed = data?.candidates?.[0]?.content?.parts?.[0]?.text || text;
+
+        // Restore acronyms
+        acronyms.forEach(({text}) => {
+            transformed = transformed.replace(
+                new RegExp(`(artificial superintelligence|artificial general intelligence|artificial intelligence|generative pre-trained transformer|large language model|natural language processing)`, 'gi'),
+                text
+            );
+        });
+
+        // More precise quote restoration
+        quotes.forEach(({fullMatch, quote, content}) => {
+            // Escape special regex characters in content
+            const escapedContent = content.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const quotePattern = new RegExp(`["'](${escapedContent})["']`, 'g');
+            transformed = transformed.replace(quotePattern, `${quote}${content}${quote}`);
+        });
+
         console.log("Successfully extracted transformed text");
-        return transformedText;
-    }
-
-    async testConnection() {
-        return this.transformText("This is a test of the Gemini API connection.");
+        return transformed;
     }
 }
 
