@@ -98,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
         generateToc: document.getElementById('generate-toc'),
         removeBlanks: document.getElementById('remove-blanks'),
         wordpress: document.getElementById('post-wordpress'),
+        twitter: document.getElementById('post-twitter'),
         linkify: document.getElementById('linkify'),
         manageLinkifyRules: document.getElementById('manage-linkify-rules')
     };
@@ -355,6 +356,167 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 }
+
+    // Twitter Article Button Handler
+    if (buttons.twitter) {
+        buttons.twitter.addEventListener('click', async () => {
+            console.log("Twitter button clicked");
+            try {
+                const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+                if (!tab.url.includes('substack.com')) {
+                    showStatus('This feature only works on Substack pages', true);
+                    return;
+                }
+
+                // Step 1: Extract content
+                showStatus('Extracting content...');
+                console.log("Injecting content extractor");
+                await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    files: ['extractContents.js']
+                });
+
+                console.log("Calling content extraction");
+                const extractResult = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: () => {
+                        if (typeof window.extractSubstackContent !== 'function') {
+                            throw new Error('Content extractor not initialized');
+                        }
+                        return window.extractSubstackContent();
+                    }
+                });
+
+                console.log("Extract result:", extractResult);
+                if (!extractResult?.[0]?.result?.success) {
+                    throw new Error(extractResult?.[0]?.result?.error || 'Failed to extract content');
+                }
+
+                // Step 2: Format for Twitter Articles
+                showStatus('Formatting for Twitter...');
+                console.log("Injecting Twitter formatter");
+                await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    files: ['formatters/twitter-formatter.js']
+                });
+
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                console.log("Calling Twitter formatter");
+                const formatResult = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: () => {
+                        if (typeof window.formatForTwitter !== 'function') {
+                            throw new Error('Twitter formatter not initialized');
+                        }
+                        return window.formatForTwitter();
+                    }
+                });
+
+                console.log("Format result:", formatResult);
+                if (!formatResult?.[0]?.result?.success) {
+                    throw new Error(formatResult?.[0]?.result?.error || 'Failed to format content');
+                }
+
+                // Verify stored content
+                console.log("Verifying stored content before opening Twitter");
+                const storedContent = await chrome.storage.local.get('twitter_formatted_content');
+                console.log("Stored content check:", {
+                    hasData: !!storedContent.twitter_formatted_content,
+                    dataKeys: storedContent.twitter_formatted_content ? Object.keys(storedContent.twitter_formatted_content) : null
+                });
+
+                // Step 3: Open Twitter Articles compose page
+                const twitterUrl = 'https://x.com/compose/articles';
+                showStatus('Opening Twitter Articles...');
+                console.log("Opening Twitter URL:", twitterUrl);
+                window.open(twitterUrl, '_blank');
+
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Find the Twitter tab
+                console.log("Looking for Twitter tab");
+                const allTabs = await chrome.tabs.query({});
+                console.log("All tabs after opening Twitter:", allTabs.map(t => ({
+                    url: t.url,
+                    active: t.active,
+                    status: t.status
+                })));
+
+                const twitterTab = allTabs.find(t =>
+                    t.url &&
+                    t.url.includes('x.com') &&
+                    t.url.includes('compose/articles')
+                );
+
+                if (twitterTab) {
+                    console.log("Found Twitter tab:", {
+                        id: twitterTab.id,
+                        url: twitterTab.url,
+                        status: twitterTab.status
+                    });
+
+                    // Wait for tab to be ready
+                    let tabReady = false;
+                    let attempts = 0;
+                    while (!tabReady && attempts < 20) {
+                        const currentTab = await chrome.tabs.get(twitterTab.id);
+                        console.log(`Tab status check ${attempts + 1}:`, currentTab.status);
+                        if (currentTab.status === 'complete') {
+                            tabReady = true;
+                        } else {
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            attempts++;
+                        }
+                    }
+
+                    console.log("Twitter tab is ready");
+
+                    // Wait additional time for React app to initialize
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+
+                    try {
+                        console.log("Injecting receiver script into Twitter tab");
+                        await chrome.scripting.executeScript({
+                            target: {tabId: twitterTab.id},
+                            files: ['receivers/twitter-receiver.js']
+                        });
+                        console.log("Receiver script injected, waiting...");
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+
+                        console.log("Attempting to call insertTwitterContent");
+                        const insertResult = await chrome.scripting.executeScript({
+                            target: {tabId: twitterTab.id},
+                            func: () => {
+                                console.log("Starting Twitter content insertion");
+                                if (typeof window.insertTwitterContent !== 'function') {
+                                    console.error("Function not found!");
+                                    return { success: false, error: "Function not found" };
+                                }
+                                return window.insertTwitterContent();
+                            }
+                        });
+
+                        console.log("Insert result:", insertResult);
+                        if (insertResult?.[0]?.result?.success) {
+                            showStatus('Content inserted - please review before posting');
+                        } else {
+                            showStatus('Content may need manual adjustment', true);
+                        }
+                    } catch (error) {
+                        console.error("Script injection error:", error);
+                        showStatus('Error: ' + error.message, true);
+                    }
+                } else {
+                    console.error("Could not find Twitter tab");
+                    showStatus('Could not find Twitter tab', true);
+                }
+            } catch (error) {
+                console.error('Twitter posting error:', error);
+                showStatus('Error: ' + error.message, true);
+            }
+        });
+    }
 
     // Linkify Button Handler
     if (buttons.linkify) {
