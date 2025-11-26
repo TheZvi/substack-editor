@@ -1,14 +1,14 @@
 {
-    "linkRules": [
-      {
-        "target": "More Dakka",
-        "url": "https://thezvi.substack.com/p/more-dakka",
-        "matchType": "caseInsensitive",
-        "wholeWord": true,
-        "maxInstances": null,
-        "hoverText": "If a little of something is good, try more of it. That might be better.",
-        "newTab": true
-      },
+  "linkRules": [
+    {
+      "target": "More Dakka",
+      "url": "https://thezvi.substack.com/p/more-dakka",
+      "matchType": "caseInsensitive",
+      "wholeWord": true,
+      "maxInstances": null,
+      "hoverText": "If a little of something is good, try more of it. That might be better.",
+      "newTab": true
+    },
     {
       "target": "The Copenhagen Interpretation of Ethics",
       "url": "https://forum.effectivealtruism.org/posts/QXpxioWSQcNuNnNTy/the-copenhagen-interpretation-of-ethics",
@@ -134,6 +134,258 @@
       "maxInstances": null,
       "hoverText": "Oh, you'd better believe it.",
       "newTab": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "level of friction",
+      "url": "https://thezvi.substack.com/p/levels-of-friction",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "levels of friction",
+      "url": "https://thezvi.substack.com/p/levels-of-friction",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "you can't fix stupid",
+      "url": "https://www.youtube.com/watch?v=UQv7Tr8HbGE&ab_channel=JeffRavitz",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "motive ambiguity",
+      "url": "https://thezvi.substack.com/p/motive-ambiguity",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "moral mazes",
+      "url": "https://thezvi.wordpress.com/2020/05/23/mazes-sequence-summary/",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "gradual disempowerment",
+      "url": "https://thezvi.substack.com/p/the-risk-of-gradual-disempowerment",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "deliberative alignment",
+      "url": "https://thezvi.substack.com/p/on-deliberative-alignment",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "it's the incentives",
+      "url": "https://talyarkoni.org/blog/2018/10/02/no-its-not-the-incentives-its-you/",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "not so fast",
+      "url": "https://www.youtube.com/watch?v=Qxa19wg5wOM&ab_channel=diehardsportdotcom",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "symbolic representation of the thing",
+      "url": "https://thezvi.substack.com/p/the-thing-and-the-symbolic-representation-of-the-thing",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "Russell conjugation",
+      "url": "https://en.wikipedia.org/wiki/Emotive_conjugation",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "that tiger went tiger",
+      "url": "https://www.youtube.com/watch?v=kGEv5dC0lo4&ab_channel=CIz4Cooki3",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "most forbidden technique",
+      "url": "https://thezvi.substack.com/p/the-most-forbidden-technique",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "Goodhart's law",
+      "url": "https://www.lesswrong.com/posts/EbFABnst8LsidYs5Y/goodhart-taxonomy",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "it's not the incentives, it's you",
+      "url": "https://talyarkoni.org/blog/2018/10/02/no-its-not-the-incentives-its-you/",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "just think of the potential",
+      "url": "https://tvtropes.org/pmwiki/pmwiki.php/Main/JustThinkOfThePotential",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "simulacra level",
+      "url": "https://thezvi.substack.com/p/simulacra-levels-summary",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "simulacra levels",
+      "url": "https://thezvi.substack.com/p/simulacra-levels-summary",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "Humans That Are Not Concentrating Are Not General Intelligences",
+      "url": "https://www.lesswrong.com/posts/4AHXDwcGab5PhKhHT/humans-who-are-not-concentrating-are-not-general",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "but that's not important right now",
+      "url": "https://www.youtube.com/watch?v=AK3gB7DpaM0&pp=ygUiYnV0IHRoYXQncyBub3QgaW1wb3J0YW50IHJpZ2h0IG5vdw%3D%3D",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "Copenhagen Interpretation of Ethics",
+      "url": "https://forum.effectivealtruism.org/posts/QXpxioWSQcNuNnNTy/the-copenhagen-interpretation-of-ethics",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "choices are bad",
+      "url": "https://thezvi.substack.com/p/choices-are-bad",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "Moloch Hasn’t Won",
+      "url": "https://thezvi.substack.com/p/moloch-hasnt-won",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseSensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "Serious Business",
+      "url": "https://tvtropes.org/pmwiki/pmwiki.php/Main/SeriousBusiness",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "Money, Dear Boy",
+      "url": "https://tvtropes.org/pmwiki/pmwiki.php/Main/MoneyDearBoy",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "DeepSeek moment",
+      "url": "https://thezvi.substack.com/p/deepseek-r1-0528-did-not-have-a-moment",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseInsensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "fake framework",
+      "url": "https://www.lesswrong.com/posts/wDP4ZWYLNj7MGXWiW/in-praise-of-fake-frameworks",
+      "wholeWord": true
+    },
+    {
+      "hoverText": null,
+      "matchType": "caseSensitive",
+      "maxInstances": null,
+      "newTab": true,
+      "target": "OF COURSE",
+      "url": "https://www.youtube.com/watch?v=1W7c8QghPxk",
+      "wholeWord": true
     }
   ]
 }
