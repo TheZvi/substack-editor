@@ -268,63 +268,6 @@ async function copyToClipboard(html, plainText) {
     }
 }
 
-/**
- * Show a notification to the user
- */
-function showNotification(message, imageCount) {
-    const notification = document.createElement('div');
-    notification.id = 'substack-helper-notification';
-    notification.innerHTML = `
-        <div style="
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #1DA1F2;
-            color: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            z-index: 999999;
-            max-width: 350px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        ">
-            <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px;">
-                Content Ready to Paste!
-            </div>
-            <div style="font-size: 14px; line-height: 1.5;">
-                ${message}
-            </div>
-            ${imageCount > 0 ? `
-                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 13px;">
-                    <strong>${imageCount} image(s)</strong> need to be added manually.
-                    URLs are in the console (F12).
-                </div>
-            ` : ''}
-            <button onclick="this.parentElement.parentElement.remove()" style="
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                background: transparent;
-                border: none;
-                color: white;
-                font-size: 18px;
-                cursor: pointer;
-            ">&times;</button>
-        </div>
-    `;
-
-    const existing = document.getElementById('substack-helper-notification');
-    if (existing) existing.remove();
-
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
-        }
-    }, 15000);
-}
-
 // ============================================================================
 // Main Function
 // ============================================================================
@@ -374,16 +317,10 @@ async function insertTwitterContent() {
         const copied = await copyToClipboard(content, plainText);
 
         if (copied) {
-            showNotification(
-                `<strong>Title:</strong> ${title}<br><br>` +
-                `Press <strong>Ctrl+V</strong> (or Cmd+V) in the article body to paste your content.` +
-                `<br><br>Then manually add the title above.`,
-                images?.length || 0
-            );
-
             console.log("=== TITLE (copy this) ===");
             console.log(title);
             console.log("=========================");
+            console.log("Content copied to clipboard. Press Ctrl+V (or Cmd+V) in the editor to paste.");
 
             return { success: true, message: "Content copied to clipboard" };
         } else {
