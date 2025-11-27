@@ -3,15 +3,246 @@ console.log("Twitter receiver loading");
 // Configuration
 const CONFIG = {
     maxRetries: 10,
-    retryDelay: 500
+    retryDelay: 500,
+    pencilClickDelay: 1500
 };
+
+// ============================================================================
+// Pencil Icon Click Strategies
+// ============================================================================
+
+const pencilClickStrategies = [
+    // Strategy 1: Look for button with aria-label
+    async function findByAriaLabel() {
+        console.log("Strategy 1: Looking for pencil by aria-label");
+        const selectors = [
+            'button[aria-label*="New"]',
+            'button[aria-label*="new"]',
+            'button[aria-label*="Create"]',
+            'button[aria-label*="create"]',
+            'button[aria-label*="Compose"]',
+            'button[aria-label*="compose"]',
+            'button[aria-label*="Write"]',
+            'button[aria-label*="write"]',
+            '[role="button"][aria-label*="New"]',
+            '[role="button"][aria-label*="Create"]'
+        ];
+        for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el) {
+                console.log("Found by aria-label:", selector);
+                return el;
+            }
+        }
+        return null;
+    },
+
+    // Strategy 2: Look for button with data-testid
+    async function findByTestId() {
+        console.log("Strategy 2: Looking for pencil by data-testid");
+        const selectors = [
+            '[data-testid*="new"]',
+            '[data-testid*="create"]',
+            '[data-testid*="compose"]',
+            '[data-testid*="write"]',
+            '[data-testid*="SideNav_NewArticle"]',
+            '[data-testid="FloatingActionButton"]',
+            '[data-testid="FAB"]'
+        ];
+        for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el) {
+                console.log("Found by data-testid:", selector);
+                return el;
+            }
+        }
+        return null;
+    },
+
+    // Strategy 3: Look for SVG pencil icon within buttons
+    async function findBySvgPath() {
+        console.log("Strategy 3: Looking for pencil SVG icon");
+        const buttons = document.querySelectorAll('button, [role="button"], a[href*="compose"]');
+        for (const btn of buttons) {
+            const svg = btn.querySelector('svg');
+            if (svg) {
+                const paths = svg.querySelectorAll('path');
+                for (const path of paths) {
+                    const d = path.getAttribute('d') || '';
+                    if (d.includes('M') && (d.includes('l') || d.includes('L'))) {
+                        if (d.length > 20 && d.length < 500) {
+                            console.log("Found potential pencil icon button");
+                            return btn;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    },
+
+    // Strategy 4: Look for floating action button (FAB)
+    async function findFAB() {
+        console.log("Strategy 4: Looking for floating action button");
+        const selectors = [
+            '[class*="FloatingAction"]',
+            '[class*="floating-action"]',
+            '[class*="fab"]',
+            '[class*="FAB"]',
+            'button[class*="compose"]',
+            'button[class*="Compose"]',
+            'a[class*="compose"]'
+        ];
+        for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el) {
+                console.log("Found FAB:", selector);
+                return el;
+            }
+        }
+        const allButtons = document.querySelectorAll('button, [role="button"]');
+        for (const btn of allButtons) {
+            const style = window.getComputedStyle(btn);
+            if (style.position === 'fixed' &&
+                parseInt(style.right) < 100 &&
+                parseInt(style.bottom) < 100) {
+                console.log("Found fixed position button in corner");
+                return btn;
+            }
+        }
+        return null;
+    },
+
+    // Strategy 5: Look by class patterns common in X/Twitter
+    async function findByClassPattern() {
+        console.log("Strategy 5: Looking by class patterns");
+        const buttons = document.querySelectorAll('button, [role="button"], div[role="button"]');
+        for (const btn of buttons) {
+            const className = btn.className || '';
+            if (className.includes('css-') && btn.querySelector('svg')) {
+                const rect = btn.getBoundingClientRect();
+                if (rect.width > 40 && rect.width < 80 &&
+                    Math.abs(rect.width - rect.height) < 10) {
+                    console.log("Found potential circular icon button");
+                    return btn;
+                }
+            }
+        }
+        return null;
+    },
+
+    // Strategy 6: Look for any clickable element with "new" or "create" text
+    async function findByText() {
+        console.log("Strategy 6: Looking by text content");
+        const walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        let node;
+        while (node = walker.nextNode()) {
+            const text = node.nodeValue.toLowerCase().trim();
+            if (text === 'new' || text === 'create' || text === 'new article') {
+                const parent = node.parentElement;
+                if (parent && (parent.tagName === 'BUTTON' ||
+                    parent.getAttribute('role') === 'button' ||
+                    parent.closest('button'))) {
+                    console.log("Found button with text:", text);
+                    return parent.closest('button') || parent;
+                }
+            }
+        }
+        return null;
+    }
+];
+
+/**
+ * Check if the editor has appeared after clicking
+ */
+async function checkEditorAppeared() {
+    const editorSelectors = [
+        '[contenteditable="true"]',
+        'textarea',
+        '[data-testid*="editor"]',
+        '[data-testid*="Editor"]',
+        '[role="textbox"]',
+        '[class*="editor"]',
+        '[class*="Editor"]',
+        'div[class*="DraftEditor"]'
+    ];
+
+    for (const selector of editorSelectors) {
+        const editors = document.querySelectorAll(selector);
+        for (const editor of editors) {
+            const rect = editor.getBoundingClientRect();
+            if (rect.width > 100 && rect.height > 50) {
+                console.log("Found visible editor:", selector);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Try all strategies to find and click the pencil icon
+ */
+async function clickPencilIcon() {
+    console.log("Attempting to click pencil icon...");
+
+    for (let attempt = 0; attempt < CONFIG.maxRetries; attempt++) {
+        console.log(`Pencil click attempt ${attempt + 1}/${CONFIG.maxRetries}`);
+
+        for (const strategy of pencilClickStrategies) {
+            try {
+                const element = await strategy();
+                if (element) {
+                    console.log("Found pencil element, clicking...");
+                    element.focus();
+                    await sleep(100);
+                    element.click();
+                    await sleep(300);
+
+                    if (await checkEditorAppeared()) {
+                        console.log("Editor appeared after click!");
+                        return true;
+                    }
+
+                    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                    element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                    element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    await sleep(300);
+
+                    if (await checkEditorAppeared()) {
+                        console.log("Editor appeared after mouse events!");
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.log("Strategy error:", e.message);
+            }
+        }
+        await sleep(CONFIG.retryDelay);
+    }
+
+    console.error("Failed to click pencil icon after all attempts");
+    return false;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============================================================================
+// Clipboard Functions
+// ============================================================================
 
 /**
  * Copy HTML content to clipboard so user can paste it
  */
 async function copyToClipboard(html, plainText) {
     try {
-        // Try using the Clipboard API with HTML
         const htmlBlob = new Blob([html], { type: 'text/html' });
         const textBlob = new Blob([plainText], { type: 'text/plain' });
 
@@ -26,7 +257,6 @@ async function copyToClipboard(html, plainText) {
     } catch (error) {
         console.error("Clipboard API failed, trying fallback:", error);
 
-        // Fallback: copy plain text
         try {
             await navigator.clipboard.writeText(plainText);
             console.log("Plain text copied to clipboard");
@@ -42,7 +272,6 @@ async function copyToClipboard(html, plainText) {
  * Show a notification to the user
  */
 function showNotification(message, imageCount) {
-    // Create a floating notification
     const notification = document.createElement('div');
     notification.id = 'substack-helper-notification';
     notification.innerHTML = `
@@ -84,13 +313,11 @@ function showNotification(message, imageCount) {
         </div>
     `;
 
-    // Remove any existing notification
     const existing = document.getElementById('substack-helper-notification');
     if (existing) existing.remove();
 
     document.body.appendChild(notification);
 
-    // Auto-remove after 15 seconds
     setTimeout(() => {
         if (notification.parentElement) {
             notification.remove();
@@ -98,8 +325,12 @@ function showNotification(message, imageCount) {
     }, 15000);
 }
 
+// ============================================================================
+// Main Function
+// ============================================================================
+
 /**
- * Main function - copy content to clipboard and notify user
+ * Main function - click pencil, then copy content to clipboard and notify user
  */
 async function insertTwitterContent() {
     console.log("Starting Twitter content preparation");
@@ -118,7 +349,17 @@ async function insertTwitterContent() {
             imageCount: images?.length
         });
 
-        // Log images for user to add manually
+        // Step 1: Try to click the pencil icon to open new article
+        console.log("Step 1: Clicking pencil icon");
+        const pencilClicked = await clickPencilIcon();
+        if (pencilClicked) {
+            console.log("Pencil clicked successfully, waiting for editor...");
+            await sleep(CONFIG.pencilClickDelay);
+        } else {
+            console.log("Pencil click failed, editor may already be open");
+        }
+
+        // Step 2: Log images for user to add manually
         if (images && images.length > 0) {
             console.log("=== IMAGES TO ADD MANUALLY ===");
             images.forEach((img, i) => {
@@ -128,7 +369,8 @@ async function insertTwitterContent() {
             console.log("==============================");
         }
 
-        // Copy content to clipboard
+        // Step 3: Copy content to clipboard
+        console.log("Step 2: Copying content to clipboard");
         const copied = await copyToClipboard(content, plainText);
 
         if (copied) {
@@ -139,7 +381,6 @@ async function insertTwitterContent() {
                 images?.length || 0
             );
 
-            // Also log the title for easy copying
             console.log("=== TITLE (copy this) ===");
             console.log(title);
             console.log("=========================");
@@ -164,8 +405,7 @@ function checkStorageAndInsert() {
     chrome.storage.local.get('twitter_formatted_content', async function(data) {
         if (data.twitter_formatted_content) {
             console.log("Found content to prepare...");
-            // Wait for page to be fully ready
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await sleep(1500);
             await insertTwitterContent();
         } else {
             console.log("No Twitter content found in storage");
