@@ -1,23 +1,31 @@
 console.log("Content extractor loading");
 
 window.extractSubstackContent = async function() {
-    console.log("Extracting Substack content");
+    console.log("=== EXTRACTING SUBSTACK CONTENT ===");
+    console.log("Current URL:", window.location.href);
+
     try {
+        // IMPORTANT: Clear old content first to prevent stale data
+        console.log("Clearing old extracted content from storage...");
+        await chrome.storage.local.remove(['extracted_content', 'wordpress_formatted_content', 'twitter_formatted_content']);
+
         // Get title from title tag and remove " - Substack" suffix
         const titleElement = document.querySelector('title');
         if (!titleElement) throw new Error("Could not find title element");
         const title = titleElement.textContent.replace(" - Substack", "");
-        
+        console.log("Extracted title:", title);
+
         // Get content using the editor selector
         const contentElement = document.querySelector('div[contenteditable="true"][data-testid="editor"]');
         console.log("Found content element:", !!contentElement);
-        
+
         if (!contentElement) {
             throw new Error("Could not find content element");
         }
 
         const rawContent = contentElement.innerHTML;
         console.log("Raw content length:", rawContent?.length);
+        console.log("Raw content preview:", rawContent?.substring(0, 200));
 
         // Process content to clean up Substack-specific elements while preserving structure
         const processedContent = cleanupContent(rawContent);
@@ -40,13 +48,20 @@ window.extractSubstackContent = async function() {
             'extracted_content': extractedContent
         });
 
-        return { 
-            success: true, 
+        // Verify storage was updated
+        const verification = await chrome.storage.local.get('extracted_content');
+        console.log("Storage verification - stored title:", verification.extracted_content?.title);
+        console.log("Storage verification - stored URL:", verification.extracted_content?.metadata?.sourceUrl);
+
+        return {
+            success: true,
             contentInfo: {
+                title: title,
                 titleLength: title.length,
                 contentLength: processedContent.length,
                 hasHeadings: processedContent.includes('</h'),
-                hasImages: processedContent.includes('<img')
+                hasImages: processedContent.includes('<img'),
+                sourceUrl: window.location.href
             }
         };
     } catch (error) {
