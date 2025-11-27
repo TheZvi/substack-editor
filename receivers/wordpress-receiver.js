@@ -2,18 +2,23 @@ console.log("WordPress receiver loading (Classic Editor version)");
 
 // Check storage immediately with more detail
 chrome.storage.local.get('wordpress_formatted_content', function(data) {
-    console.log("Initial storage check:", {
-        hasData: !!data.wordpress_formatted_content,
-        dataKeys: data.wordpress_formatted_content ? Object.keys(data.wordpress_formatted_content) : null,
-        titleLength: data.wordpress_formatted_content?.title?.length,
-        contentLength: data.wordpress_formatted_content?.content?.length,
-        rawTitle: data.wordpress_formatted_content?.title, // Log the actual title
-        contentPreview: data.wordpress_formatted_content?.content?.substring(0, 100) // Log start of content
-    });
+    console.log("=== INITIAL STORAGE CHECK ===");
+    console.log("Has data:", !!data.wordpress_formatted_content);
+    if (data.wordpress_formatted_content) {
+        console.log("Title:", data.wordpress_formatted_content.title);
+        console.log("Content length:", data.wordpress_formatted_content.content?.length);
+        console.log("Content preview:", data.wordpress_formatted_content.content?.substring(0, 150));
+        console.log("Format timestamp:", data.wordpress_formatted_content.formatTimestamp);
+        console.log("Source URL:", data.wordpress_formatted_content.originalMetadata?.sourceUrl);
+    }
+    console.log("=============================");
 });
 
 async function insertContent(data) {
-    console.log("Attempting to insert content into Classic Editor (TinyMCE)");
+    console.log("=== INSERTING CONTENT ===");
+    console.log("Title being inserted:", data.title);
+    console.log("Content length:", data.content?.length);
+    console.log("Source URL:", data.originalMetadata?.sourceUrl);
     const { title, content } = data;
 
     // Handle title first (this was working)
