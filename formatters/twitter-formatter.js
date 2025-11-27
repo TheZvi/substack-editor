@@ -19,7 +19,7 @@ window.formatForTwitter = async function() {
 
         console.log("Processing content with length:", content?.length);
 
-        // Process content for Twitter Articles
+        // Process content - keep it clean HTML, no markers
         const processedContent = processForTwitter(content);
         console.log("Processed content length:", processedContent.html?.length);
 
@@ -28,6 +28,7 @@ window.formatForTwitter = async function() {
             'twitter_formatted_content': {
                 title: cleanTitle,
                 content: processedContent.html,
+                plainText: processedContent.plainText,
                 images: processedContent.images,
                 originalMetadata: metadata,
                 formatTimestamp: Date.now()
@@ -53,40 +54,7 @@ function processForTwitter(content) {
 
     const images = [];
 
-    // Process headers - use visible markers that survive paste
-    // Format: |||H2||| Header Text |||/H2|||
-    const headings = tempDiv.querySelectorAll('h1, h2, h3, h4');
-    headings.forEach((heading) => {
-        const level = heading.tagName.toUpperCase();
-        const text = heading.textContent.trim();
-        const marker = document.createElement('p');
-        marker.textContent = `|||${level}||| ${text} |||/${level}|||`;
-        heading.replaceWith(marker);
-    });
-
-    // Process blockquotes - mark start and end, and preserve line breaks
-    // Format: |||QUOTE||| content with |||BR||| for breaks |||/QUOTE|||
-    const blockquotes = tempDiv.querySelectorAll('blockquote');
-    blockquotes.forEach(bq => {
-        // Get all the text content, preserving paragraph breaks
-        const paragraphs = bq.querySelectorAll('p');
-        let quoteContent = '';
-
-        if (paragraphs.length > 0) {
-            quoteContent = Array.from(paragraphs)
-                .map(p => p.textContent.trim())
-                .join(' |||BR||| ');
-        } else {
-            // Handle blockquotes without <p> tags
-            quoteContent = bq.textContent.trim().replace(/\n+/g, ' |||BR||| ');
-        }
-
-        const marker = document.createElement('p');
-        marker.textContent = `|||QUOTE||| ${quoteContent} |||/QUOTE|||`;
-        bq.replaceWith(marker);
-    });
-
-    // Process images - replace with placeholder text containing URL
+    // Collect image information and remove them (user will add manually)
     const imgs = tempDiv.querySelectorAll('img');
     imgs.forEach((img, index) => {
         const src = img.getAttribute('src');
@@ -97,15 +65,17 @@ function processForTwitter(content) {
                 src: src,
                 alt: alt
             });
-            // Replace image with placeholder
-            const placeholder = document.createElement('p');
-            placeholder.textContent = `|||IMAGE||| ${alt || 'Image ' + (index + 1)}: ${src} |||/IMAGE|||`;
-            img.replaceWith(placeholder);
+            // Remove images - they can't be pasted
+            img.remove();
         }
     });
 
+    // Keep headers, blockquotes, and paragraphs as-is
+    // The HTML should paste reasonably well
+
     return {
         html: tempDiv.innerHTML,
+        plainText: tempDiv.innerText,
         images: images
     };
 }
