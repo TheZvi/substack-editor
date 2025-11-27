@@ -235,6 +235,339 @@ function sleep(ms) {
 }
 
 // ============================================================================
+// EXPERIMENTAL: Title Insertion Strategies
+// ============================================================================
+
+/**
+ * Explore the DOM to find potential title fields and log detailed info
+ */
+function exploreTitleFields() {
+    console.log("=== EXPLORING DOM FOR TITLE FIELDS ===");
+
+    const candidates = [];
+
+    // Look for inputs and textareas
+    const inputs = document.querySelectorAll('input, textarea');
+    inputs.forEach((el, i) => {
+        const info = {
+            type: 'input/textarea',
+            index: i,
+            tagName: el.tagName,
+            inputType: el.type,
+            placeholder: el.placeholder,
+            ariaLabel: el.getAttribute('aria-label'),
+            dataTestId: el.getAttribute('data-testid'),
+            className: el.className?.substring(0, 100),
+            id: el.id,
+            name: el.name,
+            rect: el.getBoundingClientRect(),
+            isVisible: el.offsetParent !== null,
+            value: el.value?.substring(0, 50)
+        };
+        console.log(`Input/Textarea ${i}:`, info);
+        if (info.isVisible && info.rect.width > 100) {
+            candidates.push({ el, info, score: 0 });
+        }
+    });
+
+    // Look for contenteditable elements
+    const editables = document.querySelectorAll('[contenteditable="true"]');
+    editables.forEach((el, i) => {
+        const info = {
+            type: 'contenteditable',
+            index: i,
+            tagName: el.tagName,
+            role: el.getAttribute('role'),
+            ariaLabel: el.getAttribute('aria-label'),
+            dataTestId: el.getAttribute('data-testid'),
+            className: el.className?.substring(0, 100),
+            rect: el.getBoundingClientRect(),
+            isVisible: el.offsetParent !== null,
+            textContent: el.textContent?.substring(0, 50)
+        };
+        console.log(`Contenteditable ${i}:`, info);
+        if (info.isVisible && info.rect.width > 100) {
+            candidates.push({ el, info, score: 0 });
+        }
+    });
+
+    // Look for elements with role="textbox"
+    const textboxes = document.querySelectorAll('[role="textbox"]');
+    textboxes.forEach((el, i) => {
+        if (!el.getAttribute('contenteditable')) {
+            const info = {
+                type: 'role-textbox',
+                index: i,
+                tagName: el.tagName,
+                ariaLabel: el.getAttribute('aria-label'),
+                dataTestId: el.getAttribute('data-testid'),
+                className: el.className?.substring(0, 100),
+                rect: el.getBoundingClientRect(),
+                isVisible: el.offsetParent !== null
+            };
+            console.log(`Role textbox ${i}:`, info);
+            if (info.isVisible && info.rect.width > 100) {
+                candidates.push({ el, info, score: 0 });
+            }
+        }
+    });
+
+    // Score candidates - higher score = more likely to be title
+    candidates.forEach(c => {
+        const { el, info } = c;
+        // Title fields are usually near the top
+        if (info.rect.top < 300) c.score += 10;
+        if (info.rect.top < 200) c.score += 5;
+
+        // Title fields are usually wider
+        if (info.rect.width > 400) c.score += 5;
+
+        // Check for title-related attributes
+        const allText = (info.placeholder || '') + (info.ariaLabel || '') + (info.dataTestId || '') + (info.className || '');
+        if (/title/i.test(allText)) c.score += 20;
+        if (/headline/i.test(allText)) c.score += 15;
+        if (/heading/i.test(allText)) c.score += 10;
+
+        // Inputs with type="text" are more likely title fields than textareas
+        if (el.tagName === 'INPUT' && el.type === 'text') c.score += 5;
+
+        // First editable element is often the title
+        if (info.index === 0) c.score += 5;
+    });
+
+    // Sort by score
+    candidates.sort((a, b) => b.score - a.score);
+
+    console.log("=== TITLE FIELD CANDIDATES (sorted by score) ===");
+    candidates.forEach((c, i) => {
+        console.log(`Candidate ${i + 1} (score: ${c.score}):`, c.info);
+    });
+
+    return candidates;
+}
+
+/**
+ * Try to insert title using various methods
+ */
+async function experimentalTitleInsertion(title) {
+    console.log("=== EXPERIMENTAL TITLE INSERTION ===");
+    console.log("Title to insert:", title);
+
+    // First, explore and find candidates
+    const candidates = exploreTitleFields();
+
+    if (candidates.length === 0) {
+        console.log("❌ No title field candidates found!");
+        return { success: false, reason: "No candidates found" };
+    }
+
+    const results = [];
+
+    // Try each candidate with multiple insertion methods
+    for (let i = 0; i < Math.min(candidates.length, 3); i++) {
+        const { el, info, score } = candidates[i];
+        console.log(`\n--- Trying candidate ${i + 1} (score: ${score}) ---`);
+
+        const candidateResult = {
+            candidate: i + 1,
+            info: info,
+            methods: {}
+        };
+
+        // Focus the element first
+        try {
+            el.focus();
+            await sleep(100);
+            console.log("✓ Focused element");
+        } catch (e) {
+            console.log("✗ Could not focus:", e.message);
+        }
+
+        // Check if it's an input/textarea or contenteditable
+        const isInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+        const isContentEditable = el.getAttribute('contenteditable') === 'true';
+
+        // Method 1: Set value property (for input/textarea)
+        if (isInput) {
+            try {
+                const originalValue = el.value;
+                el.value = title;
+
+                // Dispatch input event
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                await sleep(50);
+
+                // Check if it stuck
+                const stuck = el.value === title;
+                console.log(`Method 1 (set .value + input event): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
+                console.log(`  Before: "${originalValue}", After: "${el.value}"`);
+                candidateResult.methods['setValue_inputEvent'] = stuck;
+
+                if (!stuck) {
+                    // Reset for next attempt
+                    el.value = originalValue;
+                }
+            } catch (e) {
+                console.log(`Method 1 error: ${e.message}`);
+                candidateResult.methods['setValue_inputEvent'] = { error: e.message };
+            }
+        }
+
+        // Method 2: Set value + change event (for input/textarea)
+        if (isInput && !candidateResult.methods['setValue_inputEvent']) {
+            try {
+                el.value = title;
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                await sleep(50);
+
+                const stuck = el.value === title;
+                console.log(`Method 2 (set .value + change event): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
+                candidateResult.methods['setValue_changeEvent'] = stuck;
+            } catch (e) {
+                console.log(`Method 2 error: ${e.message}`);
+                candidateResult.methods['setValue_changeEvent'] = { error: e.message };
+            }
+        }
+
+        // Method 3: execCommand insertText
+        try {
+            el.focus();
+            // Select all existing content first
+            if (isInput) {
+                el.select();
+            } else {
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+            await sleep(50);
+
+            const executed = document.execCommand('insertText', false, title);
+            await sleep(50);
+
+            const currentContent = isInput ? el.value : el.textContent;
+            const stuck = currentContent.includes(title);
+            console.log(`Method 3 (execCommand insertText): execCommand returned ${executed}, content ${stuck ? 'contains' : 'missing'} title`);
+            console.log(`  Current content: "${currentContent.substring(0, 100)}"`);
+            candidateResult.methods['execCommand_insertText'] = { executed, stuck };
+        } catch (e) {
+            console.log(`Method 3 error: ${e.message}`);
+            candidateResult.methods['execCommand_insertText'] = { error: e.message };
+        }
+
+        // Method 4: Set textContent/innerHTML (for contenteditable)
+        if (isContentEditable) {
+            try {
+                const originalContent = el.textContent;
+                el.textContent = title;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                await sleep(50);
+
+                const stuck = el.textContent === title;
+                console.log(`Method 4 (set textContent + input event): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
+                console.log(`  Before: "${originalContent.substring(0, 50)}", After: "${el.textContent.substring(0, 50)}"`);
+                candidateResult.methods['setTextContent'] = stuck;
+
+                if (!stuck) {
+                    el.textContent = originalContent;
+                }
+            } catch (e) {
+                console.log(`Method 4 error: ${e.message}`);
+                candidateResult.methods['setTextContent'] = { error: e.message };
+            }
+        }
+
+        // Method 5: Simulate keyboard input (type each character)
+        try {
+            el.focus();
+            // Clear first
+            if (isInput) {
+                el.value = '';
+            } else {
+                el.textContent = '';
+            }
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            await sleep(50);
+
+            // Type first 10 characters as a test
+            const testChars = title.substring(0, 10);
+            for (const char of testChars) {
+                el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+                el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+
+                if (isInput) {
+                    el.value += char;
+                } else {
+                    el.textContent += char;
+                }
+
+                el.dispatchEvent(new InputEvent('input', {
+                    bubbles: true,
+                    inputType: 'insertText',
+                    data: char
+                }));
+                el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+            }
+            await sleep(50);
+
+            const currentContent = isInput ? el.value : el.textContent;
+            const stuck = currentContent.includes(testChars);
+            console.log(`Method 5 (simulate keyboard): typed "${testChars}", content ${stuck ? 'contains' : 'missing'} it`);
+            console.log(`  Current content: "${currentContent.substring(0, 50)}"`);
+            candidateResult.methods['simulateKeyboard'] = stuck;
+        } catch (e) {
+            console.log(`Method 5 error: ${e.message}`);
+            candidateResult.methods['simulateKeyboard'] = { error: e.message };
+        }
+
+        // Method 6: React-specific - trigger native input setter
+        if (isInput) {
+            try {
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value'
+                )?.set;
+
+                if (nativeInputValueSetter) {
+                    nativeInputValueSetter.call(el, title);
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    await sleep(50);
+
+                    const stuck = el.value === title;
+                    console.log(`Method 6 (native setter + input): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
+                    candidateResult.methods['nativeSetter'] = stuck;
+                } else {
+                    console.log("Method 6: Native setter not available");
+                    candidateResult.methods['nativeSetter'] = { error: "Not available" };
+                }
+            } catch (e) {
+                console.log(`Method 6 error: ${e.message}`);
+                candidateResult.methods['nativeSetter'] = { error: e.message };
+            }
+        }
+
+        results.push(candidateResult);
+    }
+
+    console.log("\n=== TITLE INSERTION RESULTS SUMMARY ===");
+    results.forEach(r => {
+        console.log(`Candidate ${r.candidate}:`, r.methods);
+    });
+
+    // Check if any method succeeded
+    const anySuccess = results.some(r =>
+        Object.values(r.methods).some(v => v === true || (v && v.stuck === true))
+    );
+
+    return {
+        success: anySuccess,
+        results,
+        message: anySuccess ? "At least one method succeeded" : "All methods failed"
+    };
+}
+
+// ============================================================================
 // Clipboard Functions
 // ============================================================================
 
@@ -302,7 +635,12 @@ async function insertTwitterContent() {
             console.log("Pencil click failed, editor may already be open");
         }
 
-        // Step 2: Log images for user to add manually
+        // Step 2: EXPERIMENTAL - Try to insert title automatically
+        console.log("Step 2: Attempting experimental title insertion");
+        const titleResult = await experimentalTitleInsertion(title);
+        console.log("Title insertion result:", titleResult);
+
+        // Step 3: Log images for user to add manually
         if (images && images.length > 0) {
             console.log("=== IMAGES TO ADD MANUALLY ===");
             images.forEach((img, i) => {
@@ -312,17 +650,27 @@ async function insertTwitterContent() {
             console.log("==============================");
         }
 
-        // Step 3: Copy content to clipboard
-        console.log("Step 2: Copying content to clipboard");
+        // Step 4: Copy content to clipboard
+        console.log("Step 4: Copying content to clipboard");
         const copied = await copyToClipboard(content, plainText);
 
         if (copied) {
-            console.log("=== TITLE (copy this) ===");
-            console.log(title);
-            console.log("=========================");
-            console.log("Content copied to clipboard. Press Ctrl+V (or Cmd+V) in the editor to paste.");
+            if (titleResult.success) {
+                console.log("✓ Title was inserted automatically!");
+            } else {
+                console.log("=== TITLE (copy this manually) ===");
+                console.log(title);
+                console.log("==================================");
+            }
+            console.log("Content copied to clipboard. Press Ctrl+V (or Cmd+V) in the editor body to paste.");
 
-            return { success: true, message: "Content copied to clipboard" };
+            return {
+                success: true,
+                titleInserted: titleResult.success,
+                message: titleResult.success
+                    ? "Title inserted and content copied to clipboard"
+                    : "Content copied to clipboard (title needs manual entry)"
+            };
         } else {
             return { success: false, error: "Failed to copy to clipboard" };
         }
