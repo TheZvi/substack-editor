@@ -1,12 +1,30 @@
-console.log("WordPress receiver loading (Classic Editor version)");
+// VERSION 2.0 - With duplicate insertion prevention
+const SCRIPT_VERSION = "2.0";
+console.log(`WordPress receiver loading (Classic Editor version) - v${SCRIPT_VERSION}`);
 
-// Guard against duplicate insertions
-let insertionComplete = false;
+// Guard against duplicate insertions using DOM marker (works across script versions)
+const INSERTION_MARKER_ID = '__wp_content_inserted__';
 const INSERTION_TIMEOUT_MS = 30000; // Only accept content formatted within last 30 seconds
+
+// Check if insertion was already done (by any version of this script)
+function isInsertionDone() {
+    return document.getElementById(INSERTION_MARKER_ID) !== null;
+}
+
+// Mark insertion as done (visible to all script versions)
+function markInsertionDone() {
+    if (!document.getElementById(INSERTION_MARKER_ID)) {
+        const marker = document.createElement('div');
+        marker.id = INSERTION_MARKER_ID;
+        marker.style.display = 'none';
+        document.body.appendChild(marker);
+    }
+}
 
 // Check storage immediately with more detail
 chrome.storage.local.get('wordpress_formatted_content', function(data) {
-    console.log("=== INITIAL STORAGE CHECK ===");
+    console.log(`=== INITIAL STORAGE CHECK (v${SCRIPT_VERSION}) ===`);
+    console.log("Already inserted:", isInsertionDone());
     console.log("Has data:", !!data.wordpress_formatted_content);
     if (data.wordpress_formatted_content) {
         console.log("Title:", data.wordpress_formatted_content.title);
@@ -24,9 +42,9 @@ chrome.storage.local.get('wordpress_formatted_content', function(data) {
 });
 
 async function insertContent(data) {
-    // Guard: prevent duplicate insertions
-    if (insertionComplete) {
-        console.log("⚠️ Insertion already completed, skipping duplicate");
+    // Guard: check DOM marker first (works across all script versions)
+    if (isInsertionDone()) {
+        console.log(`⚠️ [v${SCRIPT_VERSION}] Insertion already done (DOM marker found), skipping`);
         return false;
     }
 
@@ -34,11 +52,14 @@ async function insertContent(data) {
     const formatTimestamp = data.formatTimestamp || 0;
     const age = Date.now() - formatTimestamp;
     if (age > INSERTION_TIMEOUT_MS) {
-        console.log(`⚠️ Content is stale (${age}ms old), skipping insertion`);
+        console.log(`⚠️ [v${SCRIPT_VERSION}] Content is stale (${age}ms old, max ${INSERTION_TIMEOUT_MS}ms), skipping insertion`);
         return false;
     }
 
-    console.log("=== INSERTING CONTENT ===");
+    // Mark as done IMMEDIATELY to prevent race conditions
+    markInsertionDone();
+
+    console.log(`=== INSERTING CONTENT (v${SCRIPT_VERSION}) ===`);
     console.log("Title being inserted:", data.title);
     console.log("Content length:", data.content?.length);
     console.log("Source URL:", data.originalMetadata?.sourceUrl);
@@ -81,14 +102,11 @@ async function insertContent(data) {
             window.tinyMCE.get('content').setContent(content);
         }
 
-        // Mark insertion as complete to prevent duplicates
-        insertionComplete = true;
-
-        // Clear storage to prevent stale content from being re-inserted
+        // Clear storage to prevent any other scripts from re-inserting
         console.log("Clearing storage after successful insertion");
         await chrome.storage.local.remove('wordpress_formatted_content');
 
-        console.log("✓ Content insertion complete");
+        console.log(`✓ Content insertion complete (v${SCRIPT_VERSION})`);
         return true;
     } catch (error) {
         console.error("Error inserting content:", error);
@@ -98,18 +116,18 @@ async function insertContent(data) {
 
 // Attempt content insertion when Classic Editor is ready
 function checkStorageAndInsert() {
-    if (insertionComplete) {
-        console.log("Insertion already done, skipping checkStorageAndInsert");
+    if (isInsertionDone()) {
+        console.log(`[v${SCRIPT_VERSION}] Insertion already done, skipping checkStorageAndInsert`);
         return;
     }
 
-    console.log("Checking storage for content");
+    console.log(`[v${SCRIPT_VERSION}] Checking storage for content`);
     chrome.storage.local.get('wordpress_formatted_content', async function(data) {
         if (data.wordpress_formatted_content) {
-            console.log("Found content to insert");
+            console.log(`[v${SCRIPT_VERSION}] Found content to insert`);
             await insertContent(data.wordpress_formatted_content);
         } else {
-            console.log("No content found in storage");
+            console.log(`[v${SCRIPT_VERSION}] No content found in storage`);
         }
     });
 }
@@ -123,16 +141,16 @@ if (document.readyState === 'complete') {
 
 // Expose function for direct calling
 window.insertWordPressContent = async function() {
-    console.log("insertWordPressContent called directly");
+    console.log(`[v${SCRIPT_VERSION}] insertWordPressContent called directly`);
 
-    if (insertionComplete) {
-        console.log("Insertion already completed");
+    if (isInsertionDone()) {
+        console.log(`[v${SCRIPT_VERSION}] Insertion already completed`);
         return { success: true, message: "Already inserted" };
     }
 
     const data = await chrome.storage.local.get('wordpress_formatted_content');
     if (!data.wordpress_formatted_content) {
-        console.error("No content found");
+        console.error(`[v${SCRIPT_VERSION}] No content found`);
         return { success: false, error: "No content found" };
     }
 
@@ -140,4 +158,4 @@ window.insertWordPressContent = async function() {
     return { success: result, error: result ? null : "Failed to insert content" };
 };
 
-console.log("WordPress receiver loaded (Classic Editor version)");
+console.log(`WordPress receiver loaded (Classic Editor version) - v${SCRIPT_VERSION}`);
