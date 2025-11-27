@@ -53,54 +53,54 @@ function processForTwitter(content) {
 
     const images = [];
 
-    // Process headers - mark with tokens for restoration after paste
+    // Process headers - use visible markers that survive paste
+    // Format: |||H2||| Header Text |||/H2|||
     const headings = tempDiv.querySelectorAll('h1, h2, h3, h4');
-    headings.forEach((heading, index) => {
-        const level = heading.tagName.toLowerCase();
+    headings.forEach((heading) => {
+        const level = heading.tagName.toUpperCase();
         const text = heading.textContent.trim();
-        // Use special markers that will survive paste
         const marker = document.createElement('p');
-        marker.innerHTML = `<strong><!--HEADER:${level.toUpperCase()}:START-->${text}<!--HEADER:${level.toUpperCase()}:END--></strong>`;
+        marker.textContent = `|||${level}||| ${text} |||/${level}|||`;
         heading.replaceWith(marker);
     });
 
-    // Process blockquotes - preserve line breaks
+    // Process blockquotes - mark start and end, and preserve line breaks
+    // Format: |||QUOTE||| content with |||BR||| for breaks |||/QUOTE|||
     const blockquotes = tempDiv.querySelectorAll('blockquote');
     blockquotes.forEach(bq => {
-        // Find all paragraphs or text content within blockquote
+        // Get all the text content, preserving paragraph breaks
         const paragraphs = bq.querySelectorAll('p');
-        if (paragraphs.length > 1) {
-            // Mark line breaks between paragraphs
-            paragraphs.forEach((p, index) => {
-                if (index < paragraphs.length - 1) {
-                    // Add marker after each paragraph except the last
-                    const marker = document.createTextNode('<!--BQBREAK-->');
-                    p.after(marker);
-                }
-            });
+        let quoteContent = '';
+
+        if (paragraphs.length > 0) {
+            quoteContent = Array.from(paragraphs)
+                .map(p => p.textContent.trim())
+                .join(' |||BR||| ');
+        } else {
+            // Handle blockquotes without <p> tags
+            quoteContent = bq.textContent.trim().replace(/\n+/g, ' |||BR||| ');
         }
-        // Also handle direct text content with newlines
-        const walker = document.createTreeWalker(bq, NodeFilter.SHOW_TEXT);
-        let textNode;
-        while (textNode = walker.nextNode()) {
-            if (textNode.nodeValue.includes('\n')) {
-                textNode.nodeValue = textNode.nodeValue.replace(/\n/g, '<!--BQBREAK-->');
-            }
-        }
+
+        const marker = document.createElement('p');
+        marker.textContent = `|||QUOTE||| ${quoteContent} |||/QUOTE|||`;
+        bq.replaceWith(marker);
     });
 
-    // Collect image information for potential re-upload
+    // Process images - replace with placeholder text containing URL
     const imgs = tempDiv.querySelectorAll('img');
     imgs.forEach((img, index) => {
         const src = img.getAttribute('src');
+        const alt = img.getAttribute('alt') || '';
         if (src) {
             images.push({
                 index: index,
                 src: src,
-                alt: img.getAttribute('alt') || ''
+                alt: alt
             });
-            // Mark images for identification after paste
-            img.setAttribute('data-twitter-img-index', index);
+            // Replace image with placeholder
+            const placeholder = document.createElement('p');
+            placeholder.textContent = `|||IMAGE||| ${alt || 'Image ' + (index + 1)}: ${src} |||/IMAGE|||`;
+            img.replaceWith(placeholder);
         }
     });
 

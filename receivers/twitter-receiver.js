@@ -22,10 +22,6 @@ chrome.storage.local.get('twitter_formatted_content', function(data) {
 // Pencil Icon Click Strategies - The Tricky Part
 // ============================================================================
 
-/**
- * Multiple strategies to find and click the pencil/compose icon
- * This is documented as "remarkably tricky" - using several fallback approaches
- */
 const pencilClickStrategies = [
     // Strategy 1: Look for button with aria-label
     async function findByAriaLabel() {
@@ -81,13 +77,10 @@ const pencilClickStrategies = [
         for (const btn of buttons) {
             const svg = btn.querySelector('svg');
             if (svg) {
-                // Check for pencil-like paths (common pencil icon patterns)
                 const paths = svg.querySelectorAll('path');
                 for (const path of paths) {
                     const d = path.getAttribute('d') || '';
-                    // Pencil icons often have diagonal lines
                     if (d.includes('M') && (d.includes('l') || d.includes('L'))) {
-                        // Check if it looks like a pencil (diagonal strokes)
                         if (d.length > 20 && d.length < 500) {
                             console.log("Found potential pencil icon button");
                             return btn;
@@ -118,7 +111,6 @@ const pencilClickStrategies = [
                 return el;
             }
         }
-        // Also look for fixed position buttons in bottom-right
         const allButtons = document.querySelectorAll('button, [role="button"]');
         for (const btn of allButtons) {
             const style = window.getComputedStyle(btn);
@@ -138,11 +130,8 @@ const pencilClickStrategies = [
         const buttons = document.querySelectorAll('button, [role="button"], div[role="button"]');
         for (const btn of buttons) {
             const className = btn.className || '';
-            // Look for common Twitter UI patterns
             if (className.includes('css-') && btn.querySelector('svg')) {
-                // This might be a styled button with icon
                 const rect = btn.getBoundingClientRect();
-                // FABs are typically circular and in viewport
                 if (rect.width > 40 && rect.width < 80 &&
                     Math.abs(rect.width - rect.height) < 10) {
                     console.log("Found potential circular icon button");
@@ -179,9 +168,6 @@ const pencilClickStrategies = [
     }
 ];
 
-/**
- * Try all strategies to find and click the pencil icon
- */
 async function clickPencilIcon() {
     console.log("Attempting to click pencil icon...");
 
@@ -193,22 +179,16 @@ async function clickPencilIcon() {
                 const element = await strategy();
                 if (element) {
                     console.log("Found pencil element, clicking...");
-
-                    // Try multiple click methods
                     element.focus();
                     await sleep(100);
-
-                    // Method 1: Direct click
                     element.click();
                     await sleep(300);
 
-                    // Check if editor appeared
                     if (await checkEditorAppeared()) {
                         console.log("Editor appeared after click!");
                         return true;
                     }
 
-                    // Method 2: Dispatch mouse events
                     element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
                     element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
                     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -218,23 +198,11 @@ async function clickPencilIcon() {
                         console.log("Editor appeared after mouse events!");
                         return true;
                     }
-
-                    // Method 3: Keyboard activation
-                    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-                    element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
-                    await sleep(300);
-
-                    if (await checkEditorAppeared()) {
-                        console.log("Editor appeared after keyboard!");
-                        return true;
-                    }
                 }
             } catch (e) {
                 console.log("Strategy error:", e.message);
             }
         }
-
-        // Wait before retrying
         await sleep(CONFIG.retryDelay);
     }
 
@@ -242,9 +210,6 @@ async function clickPencilIcon() {
     return false;
 }
 
-/**
- * Check if the editor has appeared after clicking
- */
 async function checkEditorAppeared() {
     const editorSelectors = [
         '[contenteditable="true"]',
@@ -259,7 +224,6 @@ async function checkEditorAppeared() {
 
     for (const selector of editorSelectors) {
         const editors = document.querySelectorAll(selector);
-        // Look for a newly visible editor (not just any contenteditable)
         for (const editor of editors) {
             const rect = editor.getBoundingClientRect();
             if (rect.width > 100 && rect.height > 50) {
@@ -276,33 +240,73 @@ async function checkEditorAppeared() {
 // ============================================================================
 
 /**
- * Find and return the title input element
+ * Find the title input - could be input OR contenteditable div
  */
 function findTitleInput() {
-    const selectors = [
+    // First try input elements
+    const inputSelectors = [
         'input[placeholder*="Title"]',
         'input[placeholder*="title"]',
         'input[aria-label*="Title"]',
         'input[aria-label*="title"]',
         '[data-testid*="title"] input',
         '[data-testid*="Title"] input',
-        'input[name="title"]',
-        // Fallback: first prominent input
-        'input[type="text"]'
+        'input[name="title"]'
     ];
 
-    for (const selector of selectors) {
+    for (const selector of inputSelectors) {
         const el = document.querySelector(selector);
         if (el) {
             console.log("Found title input:", selector);
-            return el;
+            return { element: el, type: 'input' };
         }
     }
+
+    // Try contenteditable divs for title
+    const editableSelectors = [
+        '[data-testid*="title"][contenteditable="true"]',
+        '[data-testid*="Title"][contenteditable="true"]',
+        '[aria-label*="Title"][contenteditable="true"]',
+        '[aria-label*="title"][contenteditable="true"]',
+        '[placeholder*="Title"][contenteditable="true"]',
+        '[data-placeholder*="Title"][contenteditable="true"]',
+        '[data-placeholder*="title"][contenteditable="true"]'
+    ];
+
+    for (const selector of editableSelectors) {
+        const el = document.querySelector(selector);
+        if (el) {
+            console.log("Found title contenteditable:", selector);
+            return { element: el, type: 'contenteditable' };
+        }
+    }
+
+    // Fallback: find the first/smaller contenteditable (title is usually smaller than body)
+    const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
+    if (editables.length >= 2) {
+        // Sort by area, title is usually smaller
+        editables.sort((a, b) => {
+            const aRect = a.getBoundingClientRect();
+            const bRect = b.getBoundingClientRect();
+            return (aRect.width * aRect.height) - (bRect.width * bRect.height);
+        });
+        // The smaller one is likely the title
+        console.log("Found title by size (smallest contenteditable)");
+        return { element: editables[0], type: 'contenteditable' };
+    }
+
+    // Last resort: first input
+    const firstInput = document.querySelector('input[type="text"]');
+    if (firstInput) {
+        console.log("Found title as first text input");
+        return { element: firstInput, type: 'input' };
+    }
+
     return null;
 }
 
 /**
- * Find and return the main body editor element
+ * Find the main body editor element
  */
 function findBodyEditor() {
     const selectors = [
@@ -312,11 +316,9 @@ function findBodyEditor() {
         '[aria-label*="body"] [contenteditable="true"]',
         '[aria-label*="Body"] [contenteditable="true"]',
         '[role="textbox"][contenteditable="true"]',
-        'div[contenteditable="true"]:not([aria-label*="title"])',
-        // May need to find the larger contenteditable
+        'div[contenteditable="true"]:not([aria-label*="title"])'
     ];
 
-    // First try specific selectors
     for (const selector of selectors) {
         const el = document.querySelector(selector);
         if (el) {
@@ -350,23 +352,36 @@ function findBodyEditor() {
  */
 async function insertTitle(title) {
     console.log("Inserting title:", title);
-    const titleInput = findTitleInput();
-    if (!titleInput) {
+    const titleResult = findTitleInput();
+    if (!titleResult) {
         console.error("Could not find title input");
         return false;
     }
 
-    titleInput.focus();
+    const { element, type } = titleResult;
+    element.focus();
     await sleep(100);
 
-    // Clear existing content
-    titleInput.value = '';
-    titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+    if (type === 'input') {
+        element.value = '';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.value = title;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+        // Contenteditable
+        element.textContent = '';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
 
-    // Insert new title
-    titleInput.value = title;
-    titleInput.dispatchEvent(new Event('input', { bubbles: true }));
-    titleInput.dispatchEvent(new Event('change', { bubbles: true }));
+        // Try multiple methods
+        element.textContent = title;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+
+        // Also try execCommand
+        element.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, title);
+    }
 
     console.log("Title inserted");
     return true;
@@ -386,19 +401,10 @@ async function insertBody(content) {
     bodyEditor.focus();
     await sleep(100);
 
-    // Clear existing content
+    // Clear and insert
     bodyEditor.innerHTML = '';
-
-    // Insert HTML content
     bodyEditor.innerHTML = content;
-
-    // Dispatch events to trigger React state updates
     bodyEditor.dispatchEvent(new Event('input', { bubbles: true }));
-    bodyEditor.dispatchEvent(new Event('change', { bubbles: true }));
-
-    // Try using execCommand as alternative
-    document.execCommand('selectAll', false, null);
-    document.execCommand('insertHTML', false, content);
 
     console.log("Body content inserted");
     return true;
@@ -409,87 +415,55 @@ async function insertBody(content) {
 // ============================================================================
 
 /**
- * Fix headers that lost their formatting after paste
+ * Fix all formatting markers in the content
  */
-function fixHeaders() {
-    console.log("Fixing header formatting");
+function fixAllFormatting() {
+    console.log("Fixing all formatting markers");
     const bodyEditor = findBodyEditor();
-    if (!bodyEditor) return;
+    if (!bodyEditor) {
+        console.error("Could not find body editor for fixing");
+        return;
+    }
 
     let html = bodyEditor.innerHTML;
+    console.log("Original HTML length:", html.length);
 
-    // Find and replace header markers
-    const headerRegex = /<!--HEADER:(H[1-4]):START-->(.*?)<!--HEADER:H[1-4]:END-->/g;
-    html = html.replace(headerRegex, (match, level, text) => {
-        const tag = level.toLowerCase();
-        console.log(`Restoring header ${tag}: ${text.substring(0, 30)}...`);
-        return `<${tag}>${text}</${tag}>`;
+    // Fix headers: |||H1||| text |||/H1||| -> <h1>text</h1>
+    html = html.replace(/\|\|\|H1\|\|\|\s*(.*?)\s*\|\|\|\/H1\|\|\|/g, '<h1>$1</h1>');
+    html = html.replace(/\|\|\|H2\|\|\|\s*(.*?)\s*\|\|\|\/H2\|\|\|/g, '<h2>$1</h2>');
+    html = html.replace(/\|\|\|H3\|\|\|\s*(.*?)\s*\|\|\|\/H3\|\|\|/g, '<h3>$1</h3>');
+    html = html.replace(/\|\|\|H4\|\|\|\s*(.*?)\s*\|\|\|\/H4\|\|\|/g, '<h4>$1</h4>');
+
+    // Fix blockquotes: |||QUOTE||| text |||/QUOTE||| -> <blockquote>text</blockquote>
+    // Also convert |||BR||| to <br> within quotes
+    html = html.replace(/\|\|\|QUOTE\|\|\|\s*(.*?)\s*\|\|\|\/QUOTE\|\|\|/g, (match, content) => {
+        const fixedContent = content.replace(/\s*\|\|\|BR\|\|\|\s*/g, '<br>');
+        return `<blockquote>${fixedContent}</blockquote>`;
     });
 
-    // Also remove the bold wrapper if present
-    html = html.replace(/<strong>(<h[1-4]>.*?<\/h[1-4]>)<\/strong>/g, '$1');
+    // Fix images: |||IMAGE||| description: url |||/IMAGE||| -> [IMAGE: description - url]
+    // Leave as visible text so user can manually add
+    html = html.replace(/\|\|\|IMAGE\|\|\|\s*(.*?)\s*\|\|\|\/IMAGE\|\|\|/g,
+        '<p style="color: #666; font-style: italic;">[IMAGE: $1]</p>');
 
-    bodyEditor.innerHTML = html;
-    bodyEditor.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-/**
- * Fix blockquote line breaks that were removed
- */
-function fixBlockquoteBreaks() {
-    console.log("Fixing blockquote line breaks");
-    const bodyEditor = findBodyEditor();
-    if (!bodyEditor) return;
-
-    let html = bodyEditor.innerHTML;
-
-    // Replace our markers with actual line breaks
+    // Clean up any leftover old-style markers
     html = html.replace(/<!--BQBREAK-->/g, '<br>');
+    html = html.replace(/&lt;!--BQBREAK--&gt;/g, '<br>');
 
+    console.log("Fixed HTML length:", html.length);
     bodyEditor.innerHTML = html;
     bodyEditor.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-/**
- * Fix images that became camera icons
- * This stores info for manual fixing if needed
- */
-async function fixImages(imageData) {
-    console.log("Checking images, count:", imageData?.length);
-    const bodyEditor = findBodyEditor();
-    if (!bodyEditor || !imageData || imageData.length === 0) return;
-
-    // Find image placeholders or broken images
-    const images = bodyEditor.querySelectorAll('img');
-    const placeholders = bodyEditor.querySelectorAll('[data-twitter-img-index]');
-
-    console.log("Found images:", images.length, "placeholders:", placeholders.length);
-
-    // For each original image, try to restore it
-    for (const imgInfo of imageData) {
-        console.log("Image to restore:", imgInfo.src?.substring(0, 50));
-        // Note: Actual image re-upload would require complex interaction
-        // with X's upload mechanism. For now, we log the info.
-    }
-
-    // If images are missing, add a note
-    if (images.length < imageData.length) {
-        console.warn(`Missing ${imageData.length - images.length} images. User may need to re-add manually.`);
-    }
+    console.log("Formatting fixed");
 }
 
 // ============================================================================
 // Main Orchestration
 // ============================================================================
 
-/**
- * Main function to insert content into Twitter Articles
- */
 async function insertTwitterContent() {
     console.log("Starting Twitter content insertion");
 
     try {
-        // Get formatted content
         const data = await chrome.storage.local.get('twitter_formatted_content');
         if (!data.twitter_formatted_content) {
             console.error("No content found in storage");
@@ -503,11 +477,9 @@ async function insertTwitterContent() {
         console.log("Step 1: Opening editor");
         const pencilClicked = await clickPencilIcon();
         if (!pencilClicked) {
-            // Editor might already be open, continue anyway
             console.log("Pencil click failed or editor already open, continuing...");
         }
 
-        // Wait for editor to fully load
         await sleep(CONFIG.pencilClickDelay);
 
         // Step 2: Insert title
@@ -519,13 +491,10 @@ async function insertTwitterContent() {
         await sleep(CONFIG.contentInsertDelay);
         const bodyInserted = await insertBody(content);
 
-        // Step 4: Fix formatting issues
+        // Step 4: Fix all formatting markers
         console.log("Step 4: Fixing formatting");
         await sleep(CONFIG.contentInsertDelay);
-
-        fixHeaders();
-        fixBlockquoteBreaks();
-        await fixImages(images);
+        fixAllFormatting();
 
         console.log("Content insertion complete");
         return {
@@ -556,7 +525,6 @@ function checkStorageAndInsert() {
     chrome.storage.local.get('twitter_formatted_content', async function(data) {
         if (data.twitter_formatted_content) {
             console.log("Found content to insert, waiting for page...");
-            // Wait a bit for the page to fully initialize
             await sleep(2000);
             await insertTwitterContent();
         } else {
@@ -565,14 +533,12 @@ function checkStorageAndInsert() {
     });
 }
 
-// Wait for page to be ready
 if (document.readyState === 'complete') {
     checkStorageAndInsert();
 } else {
     window.addEventListener('load', checkStorageAndInsert);
 }
 
-// Expose function for direct calling from popup
 window.insertTwitterContent = insertTwitterContent;
 
 console.log("Twitter receiver loaded");
