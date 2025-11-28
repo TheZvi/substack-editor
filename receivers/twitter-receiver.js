@@ -1,6 +1,10 @@
-// VERSION 1.0.1 - Simplified title insertion (single method only)
-const TWITTER_RECEIVER_VERSION = "1.0.1";
-console.log(`Twitter receiver loading - v${TWITTER_RECEIVER_VERSION}`);
+// VERSION 1.0.2 - Fix duplicate title insertion
+const TWITTER_RECEIVER_VERSION = "1.0.2";
+console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Loading...`, 'color: #1DA1F2; font-weight: bold');
+
+// Guard against multiple insertions
+let insertionInProgress = false;
+let insertionCompleted = false;
 
 // Configuration
 const CONFIG = {
@@ -440,12 +444,24 @@ async function copyToClipboard(html, plainText) {
  * Main function - click pencil, then copy content to clipboard and notify user
  */
 async function insertTwitterContent() {
-    console.log("Starting Twitter content preparation");
+    console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Starting content preparation`, 'color: #1DA1F2');
+
+    // Guard against duplicate insertions
+    if (insertionInProgress) {
+        console.log("[Twitter Receiver] Insertion already in progress, skipping");
+        return { success: false, error: "Insertion already in progress" };
+    }
+    if (insertionCompleted) {
+        console.log("[Twitter Receiver] Insertion already completed, skipping");
+        return { success: true, message: "Already inserted" };
+    }
+    insertionInProgress = true;
 
     try {
         const data = await chrome.storage.local.get('twitter_formatted_content');
         if (!data.twitter_formatted_content) {
-            console.error("No content found in storage");
+            console.error("[Twitter Receiver] No content found in storage");
+            insertionInProgress = false;
             return { success: false, error: "No content found" };
         }
 
@@ -487,13 +503,19 @@ async function insertTwitterContent() {
 
         if (copied) {
             if (titleResult.success) {
-                console.log("✓ Title was inserted automatically!");
+                console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] ✓ Title inserted successfully!`, 'color: #00aa00; font-weight: bold');
             } else {
                 console.log("=== TITLE (copy this manually) ===");
                 console.log(title);
                 console.log("==================================");
             }
             console.log("Content copied to clipboard. Press Ctrl+V (or Cmd+V) in the editor body to paste.");
+
+            // Mark as completed and clear storage to prevent duplicate insertions
+            insertionCompleted = true;
+            insertionInProgress = false;
+            await chrome.storage.local.remove('twitter_formatted_content');
+            console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Storage cleared, insertion complete`, 'color: #1DA1F2');
 
             return {
                 success: true,
@@ -503,11 +525,13 @@ async function insertTwitterContent() {
                     : "Content copied to clipboard (title needs manual entry)"
             };
         } else {
+            insertionInProgress = false;
             return { success: false, error: "Failed to copy to clipboard" };
         }
 
     } catch (error) {
-        console.error("Error preparing content:", error);
+        console.error("[Twitter Receiver] Error preparing content:", error);
+        insertionInProgress = false;
         return { success: false, error: error.message };
     }
 }
@@ -537,4 +561,4 @@ if (document.readyState === 'complete') {
 
 window.insertTwitterContent = insertTwitterContent;
 
-console.log(`Twitter receiver loaded - v${TWITTER_RECEIVER_VERSION}`);
+console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Ready`, 'color: #1DA1F2; font-weight: bold');
