@@ -30,10 +30,12 @@ substack-editor/
 │       └── transform-controller.js   # Core text transformation logic (~450 lines)
 │
 ├── formatters/
-│   └── wordpress-formatter.js        # Converts content to WordPress block format
+│   ├── wordpress-formatter.js        # Converts content to WordPress block format
+│   └── twitter-formatter.js          # Converts content for Twitter Articles
 │
 ├── receivers/
-│   └── wordpress-receiver.js         # Inserts content into WordPress editor
+│   ├── wordpress-receiver.js         # Inserts content into WordPress editor
+│   └── twitter-receiver.js           # Inserts content into Twitter Articles editor
 │
 ├── linkify/
 │   ├── default-rules.json            # Predefined link rules
@@ -198,6 +200,12 @@ console.log("Content script loading"); // todo remove
 1. **Ctrl+Q shortcut sometimes requires page reload** - Chrome command registration timing issue
 2. **Claude API not working** - Integration incomplete (README notes this)
 3. **Debug logging throughout** - Many `console.log` statements marked for removal
+
+### Twitter Article Posting Issues
+4. **Manual paste required for article body** - User must Ctrl+V to paste main content. UNFIXABLE: Browser security prevents programmatic paste, and direct DOM insertion breaks Twitter's editor state.
+5. **Block quote formatting lost** - Line breaks and list numberings vanish in block quotes
+6. **Images display as camera icons** - Images not transferred, show placeholder icons
+7. **Header formatting lost** - FIXED in v1.3.0: Headers auto-converted to subheadings after paste via simulated clicks
 
 ## Common Tasks
 

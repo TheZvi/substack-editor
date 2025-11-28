@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch:*)",
+      "Bash(dir \"C:\\Users\\Zvi Mowshowitz\\Documents\\substack-editor\")",
+      "Bash(git -C \"C:\\Users\\Zvi Mowshowitz\\Documents\\substack-editor\" log --oneline -3)",
+      "Bash(git -C \"C:\\Users\\Zvi Mowshowitz\\Documents\\substack-editor\" log --oneline -10)",
+      "Bash(git -C \"C:\\Users\\Zvi Mowshowitz\\substack-editor\" log --oneline -10)",
+      "Bash(move \"C:\\Users\\Zvi Mowshowitz\\Documents\\substack-editor\" \"C:\\Users\\Zvi Mowshowitz\\Documents\\substack-editor-OLD\")",
+      "Bash(dir /s /b \"C:\\Users\\Zvi Mowshowitz\\substack-editor\")",
+      "Bash(findstr:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -30,6 +30,7 @@ window.formatForTwitter = async function() {
                 content: processedContent.html,
                 plainText: processedContent.plainText,
                 images: processedContent.images,
+                headers: processedContent.headers,
                 originalMetadata: metadata,
                 formatTimestamp: Date.now()
             }
@@ -53,6 +54,7 @@ function processForTwitter(content) {
     tempDiv.innerHTML = content;
 
     const images = [];
+    const headers = [];
 
     // Collect image information and remove them (user will add manually)
     const imgs = tempDiv.querySelectorAll('img');
@@ -70,13 +72,27 @@ function processForTwitter(content) {
         }
     });
 
-    // Keep headers, blockquotes, and paragraphs as-is
-    // The HTML should paste reasonably well
+    // Collect header text for post-paste formatting
+    const headerElements = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    headerElements.forEach((header, index) => {
+        const text = header.textContent.trim();
+        if (text) {
+            headers.push({
+                index: index,
+                level: parseInt(header.tagName.charAt(1)),
+                text: text
+            });
+            console.log(`[Twitter Formatter] Found header: "${text.substring(0, 50)}"`);
+        }
+    });
+
+    console.log(`[Twitter Formatter] Collected ${headers.length} headers`);
 
     return {
         html: tempDiv.innerHTML,
         plainText: tempDiv.innerText,
-        images: images
+        images: images,
+        headers: headers
     };
 }
 

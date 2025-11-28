@@ -1,10 +1,13 @@
-// VERSION 1.0.2 - Fix duplicate title insertion
-const TWITTER_RECEIVER_VERSION = "1.0.2";
+// VERSION 1.5.0 - Clean rebuild of header auto-formatting
+const TWITTER_RECEIVER_VERSION = "1.5.0";
 console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Loading...`, 'color: #1DA1F2; font-weight: bold');
 
 // Guard against multiple insertions
 let insertionInProgress = false;
 let insertionCompleted = false;
+
+// Store header info for post-paste fixing
+let pendingHeaderFixes = [];
 
 // Configuration
 const CONFIG = {
@@ -403,6 +406,185 @@ async function experimentalTitleInsertion(title) {
 }
 
 // ============================================================================
+// Post-Paste Header Fixing
+// ============================================================================
+
+/**
+ * Find the main editor element
+ */
+function findEditorElement() {
+    const selectors = [
+        '[data-testid*="editor"] [contenteditable="true"]',
+        '[role="textbox"][contenteditable="true"]',
+        'div[contenteditable="true"]'
+    ];
+
+    for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector);
+        for (const el of elements) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 200 && rect.height > 100) {
+                return el;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Find a text block by matching content
+ */
+function findBlockByText(editor, searchText) {
+    const blocks = editor.querySelectorAll('.longform-unstyled, [data-block="true"]');
+    const normalizedSearch = searchText.replace(/\s+/g, ' ').trim();
+
+    for (const block of blocks) {
+        const blockText = block.textContent.trim().replace(/\s+/g, ' ');
+        if (blockText === normalizedSearch) {
+            return block;
+        }
+    }
+    return null;
+}
+
+/**
+ * Simulate a realistic mouse click
+ */
+function simulateClick(element) {
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    const eventOptions = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: centerX,
+        clientY: centerY,
+        screenX: centerX,
+        screenY: centerY,
+        button: 0,
+        buttons: 1
+    };
+
+    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+    element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+    element.dispatchEvent(new MouseEvent('click', eventOptions));
+    element.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+    element.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+}
+
+/**
+ * Click Body dropdown and select Subheading
+ */
+async function clickBodyDropdownAndSelectSubheading() {
+    // Find the Body/Subheading dropdown
+    const allElements = document.querySelectorAll('button, [role="button"], div[class*="css-"]');
+    let bodyDropdown = null;
+
+    for (const el of allElements) {
+        const text = el.textContent?.trim();
+        if (text === 'Body' || text === 'Heading' || text === 'Subheading') {
+            const rect = el.getBoundingClientRect();
+            if (rect.top < 150) {
+                console.log(`  Found dropdown: "${text}"`);
+                bodyDropdown = el;
+                break;
+            }
+        }
+    }
+
+    if (!bodyDropdown) {
+        console.log("  Dropdown not found");
+        return false;
+    }
+
+    // Click to open dropdown
+    console.log("  Opening dropdown...");
+    simulateClick(bodyDropdown);
+    await sleep(300);
+
+    // Find and click Subheading
+    const allDivs = document.querySelectorAll('div');
+    for (const div of allDivs) {
+        if (div.textContent?.trim() === 'Subheading' && div.offsetParent !== null) {
+            const rect = div.getBoundingClientRect();
+            if (rect.width > 50 && rect.height > 20) {
+                console.log("  Clicking Subheading...");
+                simulateClick(div);
+                await sleep(100);
+                return true;
+            }
+        }
+    }
+
+    console.log("  Subheading option not found");
+    return false;
+}
+
+/**
+ * Fix headers after paste
+ */
+async function fixHeadersAfterPaste() {
+    console.log("%c[Header Fix] Starting...", 'color: #1DA1F2; font-weight: bold');
+
+    const editor = findEditorElement();
+    if (!editor) {
+        console.log("Editor not found");
+        return;
+    }
+
+    console.log(`Headers to fix: ${pendingHeaderFixes.length}`);
+
+    let fixed = 0;
+    for (const headerInfo of pendingHeaderFixes) {
+        console.log(`Looking for: "${headerInfo.text.substring(0, 40)}..."`);
+
+        const block = findBlockByText(editor, headerInfo.text);
+        if (!block) {
+            console.log("  Not found");
+            continue;
+        }
+
+        // Select the block
+        const textSpan = block.querySelector('[data-text="true"]') || block;
+        const range = document.createRange();
+        range.selectNodeContents(textSpan);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+
+        await sleep(100);
+
+        // Apply subheading format
+        const success = await clickBodyDropdownAndSelectSubheading();
+        if (success) {
+            fixed++;
+            console.log("  Formatted!");
+        }
+
+        await sleep(200);
+    }
+
+    console.log(`%c[Header Fix] Done: ${fixed}/${pendingHeaderFixes.length}`, 'color: #00aa00; font-weight: bold');
+}
+
+/**
+ * Set up paste listener
+ */
+let pasteListenerActive = false;
+function setupPasteListener() {
+    if (pasteListenerActive) return;
+
+    document.addEventListener('paste', () => {
+        console.log("%c[Paste detected] Will fix headers in 1s...", 'color: #1DA1F2');
+        setTimeout(fixHeadersAfterPaste, 1000);
+    }, true);
+
+    pasteListenerActive = true;
+    console.log("Paste listener ready");
+}
+
+// ============================================================================
 // Clipboard Functions
 // ============================================================================
 
@@ -465,12 +647,17 @@ async function insertTwitterContent() {
             return { success: false, error: "No content found" };
         }
 
-        const { title, content, plainText, images } = data.twitter_formatted_content;
+        const { title, content, plainText, images, headers } = data.twitter_formatted_content;
         console.log("Content loaded:", {
             titleLength: title?.length,
             contentLength: content?.length,
-            imageCount: images?.length
+            imageCount: images?.length,
+            headerCount: headers?.length
         });
+
+        // Store headers for post-paste fixing
+        pendingHeaderFixes = headers || [];
+        console.log(`Stored ${pendingHeaderFixes.length} headers for fixing after paste`);
 
         // Step 1: Try to click the pencil icon to open new article
         console.log("Step 1: Clicking pencil icon");
@@ -500,6 +687,11 @@ async function insertTwitterContent() {
         // Step 4: Copy content to clipboard
         console.log("Step 4: Copying content to clipboard");
         const copied = await copyToClipboard(content, plainText);
+
+        // Step 5: Set up paste listener for header fixing
+        if (copied && pendingHeaderFixes.length > 0) {
+            setupPasteListener();
+        }
 
         if (copied) {
             if (titleResult.success) {
