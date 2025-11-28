@@ -347,7 +347,29 @@ function exploreTitleFields() {
 }
 
 /**
+ * Try a single insertion method on an element
+ * Returns true if successful, false otherwise
+ */
+async function tryInsertionMethod(el, title, methodName, methodFn) {
+    try {
+        const result = await methodFn();
+        if (result.success) {
+            console.log(`✓ ${methodName}: SUCCESS`);
+            console.log(`  Final content: "${result.content?.substring(0, 80)}"`);
+            return true;
+        } else {
+            console.log(`✗ ${methodName}: ${result.reason || 'FAILED'}`);
+            return false;
+        }
+    } catch (e) {
+        console.log(`✗ ${methodName} error: ${e.message}`);
+        return false;
+    }
+}
+
+/**
  * Try to insert title using various methods
+ * STOPS after first successful insertion to prevent duplicates
  */
 async function experimentalTitleInsertion(title) {
     console.log("=== EXPERIMENTAL TITLE INSERTION ===");
@@ -357,22 +379,14 @@ async function experimentalTitleInsertion(title) {
     const candidates = exploreTitleFields();
 
     if (candidates.length === 0) {
-        console.log("❌ No title field candidates found!");
+        console.log("No title field candidates found!");
         return { success: false, reason: "No candidates found" };
     }
 
-    const results = [];
-
-    // Try each candidate with multiple insertion methods
+    // Try each candidate, STOPPING after first success
     for (let i = 0; i < Math.min(candidates.length, 3); i++) {
         const { el, info, score } = candidates[i];
         console.log(`\n--- Trying candidate ${i + 1} (score: ${score}) ---`);
-
-        const candidateResult = {
-            candidate: i + 1,
-            info: info,
-            methods: {}
-        };
 
         // Focus the element first
         try {
@@ -381,58 +395,82 @@ async function experimentalTitleInsertion(title) {
             console.log("✓ Focused element");
         } catch (e) {
             console.log("✗ Could not focus:", e.message);
+            continue;
         }
 
-        // Check if it's an input/textarea or contenteditable
+        // Check element type
         const isInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
         const isContentEditable = el.getAttribute('contenteditable') === 'true';
 
         // Method 1: Set value property (for input/textarea)
         if (isInput) {
-            try {
-                const originalValue = el.value;
+            const success = await tryInsertionMethod(el, title, 'Method 1 (set .value)', async () => {
+                // Clear and set value
                 el.value = title;
-
-                // Dispatch input event
                 el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
                 await sleep(50);
 
-                // Check if it stuck
+                // Verify it stuck
                 const stuck = el.value === title;
-                console.log(`Method 1 (set .value + input event): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
-                console.log(`  Before: "${originalValue}", After: "${el.value}"`);
-                candidateResult.methods['setValue_inputEvent'] = stuck;
+                return { success: stuck, content: el.value };
+            });
 
-                if (!stuck) {
-                    // Reset for next attempt
-                    el.value = originalValue;
-                }
-            } catch (e) {
-                console.log(`Method 1 error: ${e.message}`);
-                candidateResult.methods['setValue_inputEvent'] = { error: e.message };
+            if (success) {
+                console.log("=== TITLE INSERTION SUCCESSFUL ===");
+                return { success: true, candidate: i + 1, method: 'setValue' };
             }
         }
 
-        // Method 2: Set value + change event (for input/textarea)
-        if (isInput && !candidateResult.methods['setValue_inputEvent']) {
-            try {
-                el.value = title;
+        // Method 2: Native setter (for React-controlled inputs)
+        if (isInput) {
+            const success = await tryInsertionMethod(el, title, 'Method 2 (native setter)', async () => {
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value'
+                )?.set;
+
+                if (!nativeInputValueSetter) {
+                    return { success: false, reason: 'Native setter not available' };
+                }
+
+                nativeInputValueSetter.call(el, title);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
                 await sleep(50);
 
                 const stuck = el.value === title;
-                console.log(`Method 2 (set .value + change event): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
-                candidateResult.methods['setValue_changeEvent'] = stuck;
-            } catch (e) {
-                console.log(`Method 2 error: ${e.message}`);
-                candidateResult.methods['setValue_changeEvent'] = { error: e.message };
+                return { success: stuck, content: el.value };
+            });
+
+            if (success) {
+                console.log("=== TITLE INSERTION SUCCESSFUL ===");
+                return { success: true, candidate: i + 1, method: 'nativeSetter' };
             }
         }
 
-        // Method 3: execCommand insertText
-        try {
+        // Method 3: Set textContent (for contenteditable)
+        if (isContentEditable) {
+            const success = await tryInsertionMethod(el, title, 'Method 3 (textContent)', async () => {
+                // Clear and set content
+                el.textContent = title;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                await sleep(50);
+
+                const stuck = el.textContent === title;
+                return { success: stuck, content: el.textContent };
+            });
+
+            if (success) {
+                console.log("=== TITLE INSERTION SUCCESSFUL ===");
+                return { success: true, candidate: i + 1, method: 'setTextContent' };
+            }
+        }
+
+        // Method 4: execCommand insertText (works for both input and contenteditable)
+        const success = await tryInsertionMethod(el, title, 'Method 4 (execCommand)', async () => {
             el.focus();
-            // Select all existing content first
+
+            // Select all existing content first to replace it
             if (isInput) {
                 el.select();
             } else {
@@ -448,123 +486,22 @@ async function experimentalTitleInsertion(title) {
             await sleep(50);
 
             const currentContent = isInput ? el.value : el.textContent;
-            const stuck = currentContent.includes(title);
-            console.log(`Method 3 (execCommand insertText): execCommand returned ${executed}, content ${stuck ? 'contains' : 'missing'} title`);
-            console.log(`  Current content: "${currentContent.substring(0, 100)}"`);
-            candidateResult.methods['execCommand_insertText'] = { executed, stuck };
-        } catch (e) {
-            console.log(`Method 3 error: ${e.message}`);
-            candidateResult.methods['execCommand_insertText'] = { error: e.message };
+            // Check for exact match (not just "includes") to avoid false positives
+            const stuck = currentContent === title;
+            return { success: stuck && executed, content: currentContent };
+        });
+
+        if (success) {
+            console.log("=== TITLE INSERTION SUCCESSFUL ===");
+            return { success: true, candidate: i + 1, method: 'execCommand' };
         }
 
-        // Method 4: Set textContent/innerHTML (for contenteditable)
-        if (isContentEditable) {
-            try {
-                const originalContent = el.textContent;
-                el.textContent = title;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                await sleep(50);
-
-                const stuck = el.textContent === title;
-                console.log(`Method 4 (set textContent + input event): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
-                console.log(`  Before: "${originalContent.substring(0, 50)}", After: "${el.textContent.substring(0, 50)}"`);
-                candidateResult.methods['setTextContent'] = stuck;
-
-                if (!stuck) {
-                    el.textContent = originalContent;
-                }
-            } catch (e) {
-                console.log(`Method 4 error: ${e.message}`);
-                candidateResult.methods['setTextContent'] = { error: e.message };
-            }
-        }
-
-        // Method 5: Simulate keyboard input (type each character)
-        try {
-            el.focus();
-            // Clear first
-            if (isInput) {
-                el.value = '';
-            } else {
-                el.textContent = '';
-            }
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            await sleep(50);
-
-            // Type first 10 characters as a test
-            const testChars = title.substring(0, 10);
-            for (const char of testChars) {
-                el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
-                el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
-
-                if (isInput) {
-                    el.value += char;
-                } else {
-                    el.textContent += char;
-                }
-
-                el.dispatchEvent(new InputEvent('input', {
-                    bubbles: true,
-                    inputType: 'insertText',
-                    data: char
-                }));
-                el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
-            }
-            await sleep(50);
-
-            const currentContent = isInput ? el.value : el.textContent;
-            const stuck = currentContent.includes(testChars);
-            console.log(`Method 5 (simulate keyboard): typed "${testChars}", content ${stuck ? 'contains' : 'missing'} it`);
-            console.log(`  Current content: "${currentContent.substring(0, 50)}"`);
-            candidateResult.methods['simulateKeyboard'] = stuck;
-        } catch (e) {
-            console.log(`Method 5 error: ${e.message}`);
-            candidateResult.methods['simulateKeyboard'] = { error: e.message };
-        }
-
-        // Method 6: React-specific - trigger native input setter
-        if (isInput) {
-            try {
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value'
-                )?.set;
-
-                if (nativeInputValueSetter) {
-                    nativeInputValueSetter.call(el, title);
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    await sleep(50);
-
-                    const stuck = el.value === title;
-                    console.log(`Method 6 (native setter + input): ${stuck ? '✓ SUCCESS' : '✗ FAILED'}`);
-                    candidateResult.methods['nativeSetter'] = stuck;
-                } else {
-                    console.log("Method 6: Native setter not available");
-                    candidateResult.methods['nativeSetter'] = { error: "Not available" };
-                }
-            } catch (e) {
-                console.log(`Method 6 error: ${e.message}`);
-                candidateResult.methods['nativeSetter'] = { error: e.message };
-            }
-        }
-
-        results.push(candidateResult);
+        console.log(`Candidate ${i + 1}: All methods failed, trying next candidate...`);
     }
 
-    console.log("\n=== TITLE INSERTION RESULTS SUMMARY ===");
-    results.forEach(r => {
-        console.log(`Candidate ${r.candidate}:`, r.methods);
-    });
-
-    // Check if any method succeeded
-    const anySuccess = results.some(r =>
-        Object.values(r.methods).some(v => v === true || (v && v.stuck === true))
-    );
-
-    return {
-        success: anySuccess,
-        results,
-        message: anySuccess ? "At least one method succeeded" : "All methods failed"
-    };
+    console.log("\n=== TITLE INSERTION FAILED ===");
+    console.log("All candidates and methods exhausted");
+    return { success: false, reason: "All methods failed on all candidates" };
 }
 
 // ============================================================================
