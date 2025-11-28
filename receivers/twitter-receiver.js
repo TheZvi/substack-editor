@@ -1,4 +1,6 @@
-console.log("Twitter receiver loading");
+// VERSION 1.0.1 - Simplified title insertion (single method only)
+const TWITTER_RECEIVER_VERSION = "1.0.1";
+console.log(`Twitter receiver loading - v${TWITTER_RECEIVER_VERSION}`);
 
 // Configuration
 const CONFIG = {
@@ -351,7 +353,7 @@ function exploreTitleFields() {
  * Simple approach: just use .value assignment which works
  */
 async function experimentalTitleInsertion(title) {
-    console.log("=== TITLE INSERTION ===");
+    console.log(`=== TITLE INSERTION v${TWITTER_RECEIVER_VERSION} ===`);
     console.log("Title to insert:", title);
 
     // Find candidates
@@ -535,4 +537,4 @@ if (document.readyState === 'complete') {
 
 window.insertTwitterContent = insertTwitterContent;
 
-console.log("Twitter receiver loaded");
+console.log(`Twitter receiver loaded - v${TWITTER_RECEIVER_VERSION}`);
