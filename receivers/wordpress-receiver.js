@@ -71,7 +71,13 @@ async function insertContent(data) {
     const titleInput = document.getElementById('title');
     if (titleInput) {
         const cleanTitle = title.replace(/^.*?Editing\s*"/i, '').replace(/"$/, '');
-        titleInput.value = cleanTitle;
+
+        // Clear and reset to prevent cursor-position insertion issues
+        titleInput.focus();
+        titleInput.select(); // Select all existing content
+        titleInput.value = ''; // Clear first
+        titleInput.value = cleanTitle; // Now set new value
+        titleInput.blur();
         titleInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
