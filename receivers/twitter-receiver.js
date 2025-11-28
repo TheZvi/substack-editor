@@ -347,35 +347,14 @@ function exploreTitleFields() {
 }
 
 /**
- * Try a single insertion method on an element
- * Returns true if successful, false otherwise
- */
-async function tryInsertionMethod(el, title, methodName, methodFn) {
-    try {
-        const result = await methodFn();
-        if (result.success) {
-            console.log(`✓ ${methodName}: SUCCESS`);
-            console.log(`  Final content: "${result.content?.substring(0, 80)}"`);
-            return true;
-        } else {
-            console.log(`✗ ${methodName}: ${result.reason || 'FAILED'}`);
-            return false;
-        }
-    } catch (e) {
-        console.log(`✗ ${methodName} error: ${e.message}`);
-        return false;
-    }
-}
-
-/**
- * Try to insert title using various methods
- * STOPS after first successful insertion to prevent duplicates
+ * Insert title into the first valid input field found
+ * Simple approach: just use .value assignment which works
  */
 async function experimentalTitleInsertion(title) {
-    console.log("=== EXPERIMENTAL TITLE INSERTION ===");
+    console.log("=== TITLE INSERTION ===");
     console.log("Title to insert:", title);
 
-    // First, explore and find candidates
+    // Find candidates
     const candidates = exploreTitleFields();
 
     if (candidates.length === 0) {
@@ -383,125 +362,38 @@ async function experimentalTitleInsertion(title) {
         return { success: false, reason: "No candidates found" };
     }
 
-    // Try each candidate, STOPPING after first success
-    for (let i = 0; i < Math.min(candidates.length, 3); i++) {
-        const { el, info, score } = candidates[i];
-        console.log(`\n--- Trying candidate ${i + 1} (score: ${score}) ---`);
+    // Try the top candidate only
+    const { el, score } = candidates[0];
+    console.log(`Trying top candidate (score: ${score})`);
 
-        // Focus the element first
-        try {
-            el.focus();
-            await sleep(100);
-            console.log("✓ Focused element");
-        } catch (e) {
-            console.log("✗ Could not focus:", e.message);
-            continue;
-        }
+    const isInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
 
-        // Check element type
-        const isInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
-        const isContentEditable = el.getAttribute('contenteditable') === 'true';
-
-        // Method 1: Set value property (for input/textarea)
-        if (isInput) {
-            const success = await tryInsertionMethod(el, title, 'Method 1 (set .value)', async () => {
-                // Clear and set value
-                el.value = title;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                await sleep(50);
-
-                // Verify it stuck
-                const stuck = el.value === title;
-                return { success: stuck, content: el.value };
-            });
-
-            if (success) {
-                console.log("=== TITLE INSERTION SUCCESSFUL ===");
-                return { success: true, candidate: i + 1, method: 'setValue' };
-            }
-        }
-
-        // Method 2: Native setter (for React-controlled inputs)
-        if (isInput) {
-            const success = await tryInsertionMethod(el, title, 'Method 2 (native setter)', async () => {
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value'
-                )?.set;
-
-                if (!nativeInputValueSetter) {
-                    return { success: false, reason: 'Native setter not available' };
-                }
-
-                nativeInputValueSetter.call(el, title);
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                await sleep(50);
-
-                const stuck = el.value === title;
-                return { success: stuck, content: el.value };
-            });
-
-            if (success) {
-                console.log("=== TITLE INSERTION SUCCESSFUL ===");
-                return { success: true, candidate: i + 1, method: 'nativeSetter' };
-            }
-        }
-
-        // Method 3: Set textContent (for contenteditable)
-        if (isContentEditable) {
-            const success = await tryInsertionMethod(el, title, 'Method 3 (textContent)', async () => {
-                // Clear and set content
-                el.textContent = title;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                await sleep(50);
-
-                const stuck = el.textContent === title;
-                return { success: stuck, content: el.textContent };
-            });
-
-            if (success) {
-                console.log("=== TITLE INSERTION SUCCESSFUL ===");
-                return { success: true, candidate: i + 1, method: 'setTextContent' };
-            }
-        }
-
-        // Method 4: execCommand insertText (works for both input and contenteditable)
-        const success = await tryInsertionMethod(el, title, 'Method 4 (execCommand)', async () => {
-            el.focus();
-
-            // Select all existing content first to replace it
-            if (isInput) {
-                el.select();
-            } else {
-                const range = document.createRange();
-                range.selectNodeContents(el);
-                const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
-            }
-            await sleep(50);
-
-            const executed = document.execCommand('insertText', false, title);
-            await sleep(50);
-
-            const currentContent = isInput ? el.value : el.textContent;
-            // Check for exact match (not just "includes") to avoid false positives
-            const stuck = currentContent === title;
-            return { success: stuck && executed, content: currentContent };
-        });
-
-        if (success) {
-            console.log("=== TITLE INSERTION SUCCESSFUL ===");
-            return { success: true, candidate: i + 1, method: 'execCommand' };
-        }
-
-        console.log(`Candidate ${i + 1}: All methods failed, trying next candidate...`);
+    if (!isInput) {
+        console.log("Top candidate is not an input/textarea, skipping title insertion");
+        return { success: false, reason: "No input field found" };
     }
 
-    console.log("\n=== TITLE INSERTION FAILED ===");
-    console.log("All candidates and methods exhausted");
-    return { success: false, reason: "All methods failed on all candidates" };
+    try {
+        // Simple and reliable: focus, select all, clear, set value
+        el.focus();
+        el.select();
+        el.value = '';
+        el.value = title;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Verify
+        if (el.value === title) {
+            console.log("=== TITLE INSERTION SUCCESSFUL ===");
+            return { success: true, method: 'setValue' };
+        } else {
+            console.log("Title did not stick, value:", el.value);
+            return { success: false, reason: "Value did not persist" };
+        }
+    } catch (e) {
+        console.log("Title insertion error:", e.message);
+        return { success: false, reason: e.message };
+    }
 }
 
 // ============================================================================
