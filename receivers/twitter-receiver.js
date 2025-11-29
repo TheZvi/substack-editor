@@ -839,11 +839,20 @@ window.fixTwitterNewlines = async function(htmlContent) {
 
         paragraphs.forEach((p, pIndex) => {
             if (pIndex < paragraphs.length - 1) {
-                const text = p.textContent.trim();
-                if (text) {
-                    const marker = text.length > 40 ? text.slice(-40) : text;
-                    markers.push({ textEndsWith: marker });
-                    console.log(`[Newline Fixer] Need break after: "...${marker}"`);
+                const currentText = p.textContent.trim();
+                const nextText = paragraphs[pIndex + 1].textContent.trim();
+                if (currentText && nextText) {
+                    // Get end of current paragraph and start of next
+                    // Use last 30 chars of current + first 15 chars of next as junction marker
+                    const endPart = currentText.length > 30 ? currentText.slice(-30) : currentText;
+                    const startPart = nextText.length > 15 ? nextText.slice(0, 15) : nextText;
+
+                    markers.push({
+                        endOfCurrent: endPart,
+                        startOfNext: startPart,
+                        junction: endPart + startPart  // What it looks like when merged
+                    });
+                    console.log(`[Newline Fixer] Need break between: "...${endPart}" and "${startPart}..."`);
                 }
             }
         });
@@ -858,12 +867,22 @@ window.fixTwitterNewlines = async function(htmlContent) {
 
     let inserted = 0;
     for (const marker of markers) {
-        console.log(`Looking for: "...${marker.textEndsWith}"`);
-        const found = findTextAndPositionCursorForNewline(editor, marker.textEndsWith);
+        console.log(`Looking for junction: "...${marker.endOfCurrent}|${marker.startOfNext}..."`);
+
+        // Strategy 1: Look for the junction (merged text)
+        let found = findJunctionAndPositionCursor(editor, marker.endOfCurrent, marker.startOfNext);
+
+        if (!found) {
+            // Strategy 2: Fall back to just finding end of current paragraph
+            console.log("  Junction not found, trying end-of-paragraph match...");
+            found = findTextAndPositionCursorForNewline(editor, marker.endOfCurrent);
+        }
+
         if (!found) {
             console.log("  Text not found, skipping");
             continue;
         }
+
         console.log("  Found! Pressing Enter...");
         await sleep(100);
         simulateEnterKey(editor);
@@ -874,5 +893,54 @@ window.fixTwitterNewlines = async function(htmlContent) {
     console.log(`%c[Newline Fixer] Done: ${inserted}/${markers.length}`, 'color: #00aa00; font-weight: bold');
     return { success: true, count: inserted };
 };
+
+/**
+ * Find the junction between two merged paragraphs and position cursor there
+ * This handles the case where "text.Next" got turned into a link
+ */
+function findJunctionAndPositionCursor(editor, endOfCurrent, startOfNext) {
+    // Get all text content from editor, flattening any link elements
+    const fullText = editor.textContent;
+
+    // Look for the junction point
+    const junctionPattern = endOfCurrent + startOfNext;
+    const junctionIndex = fullText.indexOf(junctionPattern);
+
+    if (junctionIndex === -1) {
+        return false;
+    }
+
+    // Found it! Now we need to position cursor right after endOfCurrent
+    const targetPosition = junctionIndex + endOfCurrent.length;
+
+    // Walk through text nodes to find the right position
+    const walker = document.createTreeWalker(
+        editor,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
+
+    let currentPos = 0;
+    let node;
+    while (node = walker.nextNode()) {
+        const nodeLength = node.textContent.length;
+        if (currentPos + nodeLength >= targetPosition) {
+            // Target is in this node
+            const offsetInNode = targetPosition - currentPos;
+            const range = document.createRange();
+            range.setStart(node, offsetInNode);
+            range.setEnd(node, offsetInNode);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            console.log(`  Found junction at position ${targetPosition}, node offset ${offsetInNode}`);
+            return true;
+        }
+        currentPos += nodeLength;
+    }
+
+    return false;
+}
 
 console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Ready`, 'color: #1DA1F2; font-weight: bold');
