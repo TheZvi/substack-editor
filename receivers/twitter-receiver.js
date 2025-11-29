@@ -1,5 +1,5 @@
-// VERSION 1.5.0 - Clean rebuild of header auto-formatting
-const TWITTER_RECEIVER_VERSION = "1.5.0";
+// VERSION 1.5.1 - Add 25 image limit for Twitter Articles
+const TWITTER_RECEIVER_VERSION = "1.5.1";
 console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Loading...`, 'color: #1DA1F2; font-weight: bold');
 
 // Guard against multiple insertions
@@ -587,6 +587,12 @@ async function fixHeadersAfterPaste() {
         console.log("%c[Newline Fix] Starting...", 'color: #657786; font-weight: bold');
         const result = await window.fixTwitterNewlines(data.extracted_content.content);
         console.log("[Newline Fix] Result:", result);
+
+        // Now fix numbered lists in blockquotes
+        console.log("%c[List Fix] Waiting 500ms before fixing numbered lists...", 'color: #9C27B0');
+        await sleep(500);
+        const listResult = await window.fixTwitterNumberedLists(data.extracted_content.content);
+        console.log("[List Fix] Result:", listResult);
     } else {
         console.log("[Newline Fix] No extracted content found, skipping");
     }
@@ -945,6 +951,177 @@ window.fixTwitterNewlines = async function(htmlContent) {
 };
 
 /**
+ * Fix numbered lists in blockquotes - insert the numbers that got stripped
+ * Handles nested lists with different numbering schemes:
+ * - Level 1: 1, 2, 3...
+ * - Level 2: a, b, c... (indented 4 spaces)
+ * - Level 3: i, ii, iii... (indented 8 spaces)
+ */
+window.fixTwitterNumberedLists = async function(htmlContent) {
+    console.log("%c[List Fixer] Starting...", 'color: #9C27B0; font-weight: bold');
+
+    const editor = findEditorElement();
+    if (!editor) {
+        console.log("Editor not found");
+        return { success: false, error: "Editor not found" };
+    }
+
+    // Parse content and find numbered list items
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    const listItems = [];
+
+    // Recursively process ordered lists, tracking nesting level
+    function processOrderedList(ol, level) {
+        // Get direct li children only (not nested ones)
+        const items = Array.from(ol.children).filter(child => child.tagName === 'LI');
+
+        items.forEach((li, liIndex) => {
+            const itemNumber = liIndex + 1;
+
+            // Get the text content of this li, excluding nested lists
+            let itemText = '';
+            for (const child of li.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    itemText += child.textContent;
+                } else if (child.nodeType === Node.ELEMENT_NODE && child.tagName !== 'OL' && child.tagName !== 'UL') {
+                    itemText += child.textContent;
+                }
+            }
+            itemText = itemText.trim();
+
+            if (itemText) {
+                // Get the start of the item text (first 30 chars) to find it
+                const textStart = itemText.length > 30 ? itemText.slice(0, 30) : itemText;
+
+                // Format number based on level
+                const formattedNumber = formatListNumber(itemNumber, level);
+                const indent = '    '.repeat(level); // 4 spaces per level
+
+                listItems.push({
+                    level: level,
+                    number: itemNumber,
+                    formattedNumber: formattedNumber,
+                    indent: indent,
+                    textStart: textStart,
+                    fullText: itemText
+                });
+                console.log(`[List Fixer] Level ${level}, Item ${formattedNumber}: "${textStart.substring(0, 20)}..."`);
+            }
+
+            // Check for nested ordered lists inside this li
+            const nestedOls = li.querySelectorAll(':scope > ol');
+            nestedOls.forEach(nestedOl => {
+                processOrderedList(nestedOl, level + 1);
+            });
+        });
+    }
+
+    // Find top-level ordered lists (not nested inside other lists)
+    const topLevelOls = tempDiv.querySelectorAll('ol');
+    topLevelOls.forEach(ol => {
+        // Only process if this is a top-level list (not nested)
+        if (!ol.parentElement || ol.parentElement.tagName !== 'LI') {
+            processOrderedList(ol, 0);
+        }
+    });
+
+    if (listItems.length === 0) {
+        console.log("No numbered list items found");
+        return { success: true, count: 0, message: "No numbered lists" };
+    }
+
+    console.log(`Found ${listItems.length} list items to number`);
+
+    let inserted = 0;
+    for (const item of listItems) {
+        console.log(`Looking for: "${item.textStart.substring(0, 20)}..."`);
+
+        // Find the text and position cursor at the START of it
+        const found = findTextAndPositionCursorAtStart(editor, item.textStart);
+
+        if (!found) {
+            console.log("  Text not found, skipping");
+            continue;
+        }
+
+        // Build the prefix: indent + number + ". "
+        const prefix = `${item.indent}${item.formattedNumber}. `;
+        console.log(`  Found! Inserting "${prefix}"...`);
+        await sleep(100);
+
+        // Type the prefix
+        document.execCommand('insertText', false, prefix);
+        inserted++;
+
+        await sleep(150);
+    }
+
+    console.log(`%c[List Fixer] Done: ${inserted}/${listItems.length}`, 'color: #00aa00; font-weight: bold');
+    return { success: true, count: inserted };
+};
+
+/**
+ * Format a list number based on nesting level
+ * Level 0: 1, 2, 3...
+ * Level 1: a, b, c...
+ * Level 2: i, ii, iii...
+ */
+function formatListNumber(num, level) {
+    if (level === 0) {
+        return num.toString();
+    } else if (level === 1) {
+        // a, b, c, ...
+        return String.fromCharCode(96 + num); // 97 = 'a'
+    } else {
+        // i, ii, iii, iv, v, ...
+        const romanNumerals = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x',
+                               'xi', 'xii', 'xiii', 'xiv', 'xv', 'xvi', 'xvii', 'xviii', 'xix', 'xx'];
+        return romanNumerals[num - 1] || num.toString();
+    }
+}
+
+/**
+ * Find text and position cursor at the START of it (for inserting numbers before)
+ */
+function findTextAndPositionCursorAtStart(editor, searchText) {
+    const fullText = editor.textContent;
+    const index = fullText.indexOf(searchText);
+
+    if (index === -1) {
+        return false;
+    }
+
+    // Walk through text nodes to find the right position
+    const walker = document.createTreeWalker(
+        editor,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
+
+    let currentPos = 0;
+    let node;
+    while (node = walker.nextNode()) {
+        const nodeLength = node.textContent.length;
+        if (currentPos + nodeLength > index) {
+            // Target is in this node
+            const offsetInNode = index - currentPos;
+            const range = document.createRange();
+            range.setStart(node, offsetInNode);
+            range.setEnd(node, offsetInNode);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return true;
+        }
+        currentPos += nodeLength;
+    }
+
+    return false;
+}
+
+/**
  * Find the junction between two merged paragraphs and position cursor there
  * This handles the case where "text.Next" got turned into a link
  */
@@ -1057,7 +1234,17 @@ function updateImageIndicator(current, total, altText) {
     const message = document.getElementById('twitter-image-message');
     if (message) {
         const displayAlt = altText ? ` "${altText.substring(0, 30)}${altText.length > 30 ? '...' : ''}"` : '';
-        message.textContent = `Image ${current} of ${total}${displayAlt}`;
+        message.innerHTML = `Image ${current} of ${total}${displayAlt}`;
+
+        // Show warning about skipped images if any
+        if (skippedImageCount > 0) {
+            const firstSkipped = total + 1;
+            const lastSkipped = total + skippedImageCount;
+            const skippedRange = firstSkipped === lastSkipped
+                ? `Image ${firstSkipped}`
+                : `Images ${firstSkipped}-${lastSkipped}`;
+            message.innerHTML += `<div style="font-size: 12px; margin-top: 4px; color: #FFE082;">(${skippedRange} exceed${firstSkipped === lastSkipped ? 's' : ''} Twitter limit)</div>`;
+        }
     }
 }
 
@@ -1286,6 +1473,8 @@ function cleanupImageFlow() {
 /**
  * Start the image insertion flow
  */
+let skippedImageCount = 0;  // Track images that exceed 25 limit
+
 async function startImageInsertionFlow(images) {
     if (!images || images.length === 0) {
         console.log('[Image Fix] No images to insert');
@@ -1293,13 +1482,25 @@ async function startImageInsertionFlow(images) {
     }
 
     // Filter out images that don't have data
-    const validImages = images.filter(img => img.imageData && img.imageData.base64);
+    let validImages = images.filter(img => img.imageData && img.imageData.base64);
     if (validImages.length === 0) {
         console.log('[Image Fix] No valid images with data to insert');
         return;
     }
 
-    console.log(`%c[Image Fix] Starting flow for ${validImages.length} images (${images.length - validImages.length} skipped - no data)`, 'color: #E91E63; font-weight: bold');
+    // Twitter has a 25 image limit
+    const TWITTER_IMAGE_LIMIT = 25;
+    skippedImageCount = 0;
+
+    if (validImages.length > TWITTER_IMAGE_LIMIT) {
+        skippedImageCount = validImages.length - TWITTER_IMAGE_LIMIT;
+        const firstSkipped = TWITTER_IMAGE_LIMIT + 1;
+        const lastSkipped = validImages.length;
+        console.log(`%c[Image Fix] Twitter limit: Only posting first ${TWITTER_IMAGE_LIMIT} images (Images ${firstSkipped}-${lastSkipped} exceed limit)`, 'color: #FF9800; font-weight: bold');
+        validImages = validImages.slice(0, TWITTER_IMAGE_LIMIT);
+    }
+
+    console.log(`%c[Image Fix] Starting flow for ${validImages.length} images (${images.length - validImages.length - skippedImageCount} skipped - no data)`, 'color: #E91E63; font-weight: bold');
 
     imageInsertionInProgress = true;  // Set flag to prevent content paste handler
     pendingImages = validImages;
