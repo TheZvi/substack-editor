@@ -777,7 +777,9 @@ function initializeApiKeyManagement() {
         input: document.getElementById('gemini-api-key'),
         saveButton: document.getElementById('save-gemini-key'),
         showButton: document.getElementById('show-gemini-key'),
-        testButton: document.getElementById('test-gemini-key')
+        testButton: document.getElementById('test-gemini-key'),
+        modelInput: document.getElementById('gemini-model'),
+        saveModelButton: document.getElementById('save-gemini-model')
     };
 
     // Verify all elements exist
@@ -853,7 +855,7 @@ function initializeApiKeyManagement() {
                 console.log("GeminiApi instance created");
                 const result = await geminiApi.testConnection();
                 console.log("Test connection result:", result);
-                
+
                 if (result.success) {
                     showApiStatus('Gemini API connection successful!');
                 } else {
@@ -865,13 +867,34 @@ function initializeApiKeyManagement() {
             }
         });
     }
+
+    // Gemini Model Save Handler
+    if (geminiElements.saveModelButton) {
+        geminiElements.saveModelButton.addEventListener('click', async () => {
+            console.log("Saving Gemini model");
+            try {
+                const model = geminiElements.modelInput.value.trim();
+                if (model) {
+                    await chrome.storage.local.set({ 'gemini-model': model });
+                    showApiStatus(`Gemini model set to: ${model}`);
+                } else {
+                    // Clear custom model, will use default
+                    await chrome.storage.local.remove('gemini-model');
+                    showApiStatus('Gemini model reset to default (gemini-2.5-flash)');
+                }
+            } catch (error) {
+                console.error("Error saving Gemini model:", error);
+                showApiStatus('Error saving Gemini model', true);
+            }
+        });
+    }
 }
 
 async function loadApiKeys() {
     console.log("Loading saved API keys");
     try {
-        const result = await chrome.storage.local.get(['claude-api-key', 'gemini-api-key']);
-        
+        const result = await chrome.storage.local.get(['claude-api-key', 'gemini-api-key', 'gemini-model']);
+
         const claudeInput = document.getElementById('claude-api-key');
         if (claudeInput && result['claude-api-key']) {
             claudeInput.value = result['claude-api-key'];
@@ -882,6 +905,13 @@ async function loadApiKeys() {
         if (geminiInput && result['gemini-api-key']) {
             geminiInput.value = result['gemini-api-key'];
             console.log("Gemini API key loaded");
+        }
+
+        const geminiModelInput = document.getElementById('gemini-model');
+        if (geminiModelInput) {
+            geminiModelInput.value = result['gemini-model'] || '';
+            geminiModelInput.placeholder = 'gemini-2.5-flash';
+            console.log("Gemini model loaded:", result['gemini-model'] || '(default)');
         }
     } catch (error) {
         console.error("Error loading API keys:", error);

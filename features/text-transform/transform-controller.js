@@ -32,20 +32,66 @@ class TransformController {
         return this.rules.transformationRules;
     }
 
+    showWorkingIndicator() {
+        // Remove any existing indicator
+        this.hideWorkingIndicator();
+
+        const indicator = document.createElement('div');
+        indicator.id = 'transform-working-indicator';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #4285f4, #34a853);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 999999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        `;
+        indicator.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;">
+                <style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
+                <circle cx="12" cy="12" r="10" stroke="white" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
+            </svg>
+            Transforming text...
+        `;
+        document.body.appendChild(indicator);
+    }
+
+    hideWorkingIndicator() {
+        const indicator = document.getElementById('transform-working-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+
     async getApiKey(type) {
+        // Use cached key if available
+        if (this._cachedApiKey) {
+            return this._cachedApiKey;
+        }
+
         return new Promise((resolve, reject) => {
-            // Add timeout to prevent hanging
             const timeout = setTimeout(() => {
                 window.removeEventListener('message', handler);
                 reject(new Error('API key request timed out'));
-            }, 5000); // 5 second timeout
+            }, 500); // Reduced timeout - local message should be fast
 
             const handler = (event) => {
                 if (event.source !== window) return;
                 if (event.data.type !== 'api-key-response') return;
-                
+
                 clearTimeout(timeout);
                 window.removeEventListener('message', handler);
+                this._cachedApiKey = event.data.key;
                 resolve(event.data.key);
             };
 
@@ -102,139 +148,53 @@ class TransformController {
                 }
             }
 
-            console.log("Starting handleTransform with:", {
-                hasInputText: !!inputText,
-                inputTextType: typeof inputText
-            });
+            // Show working indicator
+            this.showWorkingIndicator();
 
             const userSelection = window.getSelection();
-            console.log("Selection:", {
-                hasSelection: !!userSelection,
-                rangeCount: userSelection?.rangeCount
-            });
-
             if (!userSelection || userSelection.rangeCount === 0) {
-                console.log("No valid selection found");
+                this.hideWorkingIndicator();
                 return { success: false, error: "No valid selection" };
             }
 
             const selectionRange = userSelection.getRangeAt(0);
             const contentFragment = selectionRange.cloneContents();
-            
+
             // Create a temporary div to get HTML
             const selectionDiv = document.createElement('div');
             selectionDiv.appendChild(contentFragment.cloneNode(true));
             let processedText = selectionDiv.innerHTML;
 
-            console.log("Content Fragment:", {
-                hasFragment: !!contentFragment,
-                nodeType: contentFragment?.nodeType,
-                childNodes: contentFragment?.childNodes?.length,
-                innerHTML: contentFragment?.innerHTML,
-                selectionDivHTML: selectionDiv.innerHTML
-            });
-
             if (!processedText) {
-                console.log("No content found in selection or input");
+                this.hideWorkingIndicator();
                 return { success: false, error: "No content to process" };
             }
 
-            console.log("LINK CHECK 1 - Selection:", {
-                hasProcessedText: !!processedText,
-                processedTextType: typeof processedText,
-                rawText: processedText,
-                hasHTML: processedText?.includes('<'),
-                links: Array.from(contentFragment.querySelectorAll('a')).map(a => ({
-                    text: a.textContent,
-                    href: a.href,
-                    fullHTML: a.outerHTML
-                }))
-            });
-
-            console.log("Initial text with HTML:", {
-                text: processedText,
-                html: window.getSelection().getRangeAt(0).cloneContents().innerHTML
-            });
-
-            console.log("\n=== Text Transformation ===");
-            console.log("Input:", processedText);
-            
-            console.log("Getting API key...");
             const apiKey = await this.getApiKey('gemini-api-key');
             if (!apiKey) {
+                this.hideWorkingIndicator();
                 throw new Error("No API key found");
             }
-            console.log("API key received");
 
-            console.log("Getting transformation rules...");
             const rules = await this.getRules();
-            console.log("Rules received:", rules);
 
             // Add rule to preserve HTML links
-            rules.unshift({ 
-                priority: -1,  // Even higher priority
+            rules.unshift({
+                priority: -1,
                 description: "MOST IMPORTANT: Preserve these exactly: 1) All acronyms 'ASI', 'AGI', 'AI', 'GPT', 'LLM', 'NLP' must stay as acronyms 2) All quote marks must stay exactly as they are (don't change ' to \" or vice versa)"
             });
 
-            console.log("LINK CHECK 2 - Pre-Gemini:", {
-                textToSend: processedText,
-                hasLinks: processedText.includes('<a'),
-                linkElements: processedText.match(/<a[^>]*>.*?<\/a>/g)
-            });
-
-            console.log("Sending to Gemini:", {
-                text: processedText,
-                containsLinks: processedText.includes('href='),
-                htmlTags: processedText.match(/<[^>]+>/g)
-            });
-
-            console.log("Calling API for transformation...");
             const transformedText = await this.api.transformText(processedText, apiKey, rules);
-            
+
             let processedHtml = transformedText;
             if (!processedHtml.includes('<p>')) {
-                // If we don't have paragraph tags, wrap the text
                 processedHtml = `<p>${processedHtml}</p>`;
             }
 
-            console.log("LINK CHECK 3 - Post-Gemini:", {
-                transformedText: processedHtml,
-                hasLinks: processedHtml.includes('<a'),
-                linkElements: processedHtml.match(/<a[^>]*>.*?<\/a>/g)
-            });
-            
-            console.log("Received from Gemini:", {
-                text: processedHtml,
-                containsLinks: processedHtml.includes('href='),
-                htmlTags: processedHtml.match(/<[^>]+>/g)
-            });
-
-            console.log("Output:", transformedText);
-            console.log("=====================\n");
-
-            console.log("Raw transformed text:", JSON.stringify(transformedText));
-            console.log("After initial trim:", JSON.stringify(transformedText.trim()));
-            
-            // 1. Initial text state
-            console.log("=== Source Analysis ===");
-            console.log("1. Original selection:", JSON.stringify(processedText));
-            
-            // 2. After Gemini transformation
-            console.log("\n2. Gemini Output:");
-            console.log("Raw response:", JSON.stringify(transformedText));
-            console.log("After trim:", JSON.stringify(transformedText.trim()));
-            
-            // 3. DOM state before modification
+            // Create fragment for insertion
             const selection = window.getSelection();
             const range = selection.getRangeAt(0);
-            console.log("\n3. DOM Before Change:");
-            console.log("Start container:", range.startContainer);
-            console.log("Start container parent:", range.startContainer.parentNode);
-            console.log("End container:", range.endContainer);
-            console.log("Common ancestor:", range.commonAncestorContainer);
-            
-            // 4. Fragment creation
-            // Create a temporary div to parse the HTML
+
             const outputDiv = document.createElement('div');
             outputDiv.innerHTML = processedHtml.trim();
 
@@ -255,39 +215,34 @@ class TransformController {
             Array.from(outputDiv.children).forEach(child => {
                 fragment.appendChild(child.cloneNode(true));
             });
-            
-            // 5. Just before insertion
-            console.log("\n5. Pre-insertion:");
-            console.log("Fragment node count:", fragment.childNodes.length);
-            console.log("Fragment nodes:", Array.from(fragment.childNodes).map(n => ({
-                type: n.nodeType,
-                name: n.nodeName,
-                content: n.textContent
-            })));
-            
-            // 6. Insertion
+
+            // Insert the transformed content
             range.deleteContents();
             range.insertNode(fragment);
-            
-            // Clean up empty paragraphs at start/end of blockquote
-            setTimeout(() => {
-                const blockquote = range.commonAncestorContainer.closest('blockquote');
-                if (blockquote) {
-                    const paragraphs = blockquote.querySelectorAll('p');
-                    if (paragraphs.length > 0) {
-                        if (!paragraphs[0].textContent.trim()) {
-                            paragraphs[0].remove();
-                        }
-                        if (!paragraphs[paragraphs.length - 1].textContent.trim()) {
-                            paragraphs[paragraphs.length - 1].remove();
+
+            // Clean up empty paragraphs at start/end of blockquote (async, non-blocking)
+            requestAnimationFrame(() => {
+                try {
+                    const blockquote = range.commonAncestorContainer.closest?.('blockquote');
+                    if (blockquote) {
+                        const paragraphs = blockquote.querySelectorAll('p');
+                        if (paragraphs.length > 0) {
+                            if (!paragraphs[0].textContent.trim()) {
+                                paragraphs[0].remove();
+                            }
+                            if (!paragraphs[paragraphs.length - 1].textContent.trim()) {
+                                paragraphs[paragraphs.length - 1].remove();
+                            }
                         }
                     }
-                }
-            }, 200);
-            
+                } catch (e) { /* ignore cleanup errors */ }
+            });
+
+            this.hideWorkingIndicator();
             return { success: true };
 
         } catch (error) {
+            this.hideWorkingIndicator();
             console.error("Transform error:", error);
             window.postMessage({
                 type: 'transform-error',

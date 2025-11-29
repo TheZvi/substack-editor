@@ -46,6 +46,13 @@ window.addEventListener('message', async (event) => {
        llmApiKeys[event.data.service] = event.data.key;
        await chrome.storage.local.set({ llmApiKeys });
    }
+   else if (event.data.type === 'get-gemini-model') {
+       const result = await chrome.storage.local.get('gemini-model');
+       window.postMessage({
+           type: 'gemini-model-response',
+           model: result['gemini-model']
+       }, '*');
+   }
    else if (event.data.type === 'claude-api-request' || event.data.type === 'gemini-api-request') {
        try {
            const response = await chrome.runtime.sendMessage({

@@ -1,11 +1,41 @@
 console.log("Starting to load GeminiApi...");
 
+// Default model - can be overridden via chrome.storage
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+
 class GeminiApi extends LLMApi {
     constructor(config = {}) {
         super({
-            apiVersion: 'v1',
-            model: 'gemini-1.5-flash-8b',
+            apiVersion: 'v1beta',
+            model: config.model || DEFAULT_GEMINI_MODEL,
             ...config
+        });
+    }
+
+    async getModel() {
+        // Always fetch fresh from storage - model can change between calls
+        return new Promise((resolve) => {
+            window.postMessage({ type: 'get-gemini-model' }, '*');
+
+            let resolved = false;
+            const handler = (event) => {
+                if (event.source !== window) return;
+                if (event.data.type !== 'gemini-model-response') return;
+                if (resolved) return;
+                resolved = true;
+                window.removeEventListener('message', handler);
+                resolve(event.data.model || this.config.model);
+            };
+
+            window.addEventListener('message', handler);
+
+            // Short timeout - local message should be fast
+            setTimeout(() => {
+                if (resolved) return;
+                resolved = true;
+                window.removeEventListener('message', handler);
+                resolve(this.config.model);
+            }, 100);
         });
     }
 
@@ -22,7 +52,7 @@ class GeminiApi extends LLMApi {
         let currentIndex = 0;
         const quoteRegex = /(['"])((?:[^'"\\]|\\.)*?)\1/g;
         let match;
-        
+
         while ((match = quoteRegex.exec(text)) !== null) {
             quotes.push({
                 fullMatch: match[0],
@@ -42,10 +72,11 @@ ${text}
 
 Return the transformed text directly without any additional commentary or labels.`;
 
-        console.log("Making Gemini API request with prompt:", prompt);
+        // Get the model (user-configured or default)
+        const model = await this.getModel();
 
         // Make the API request
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-8b:generateContent?key=${apiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -59,15 +90,11 @@ Return the transformed text directly without any additional commentary or labels
             })
         });
 
-        console.log("Sending request to Gemini...");
-        
         if (!response.ok) {
             throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        console.log("Received response from Gemini");
-        console.log("Processing Gemini response:", data);
 
         let transformed = data?.candidates?.[0]?.content?.parts?.[0]?.text || text;
 
