@@ -394,6 +394,16 @@ async function experimentalTitleInsertion(title) {
         // Verify
         if (el.value === title) {
             console.log("=== TITLE INSERTION SUCCESSFUL ===");
+
+            // Focus the editor body to save user a click
+            await sleep(200);
+            const editor = findEditorElement();
+            if (editor) {
+                editor.focus();
+                simulateClick(editor);
+                console.log("Focused editor body");
+            }
+
             return { success: true, method: 'setValue' };
         } else {
             console.log("Title did not stick, value:", el.value);
