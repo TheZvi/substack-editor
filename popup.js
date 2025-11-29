@@ -499,7 +499,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         console.log("Insert result:", insertResult);
                         if (insertResult?.[0]?.result?.success) {
-                            showStatus('Content inserted - please review before posting');
+                            showStatus('Content copied - paste with Ctrl+V, then headers will be fixed');
+
+                            // Note: The newline fix will be called by twitter-receiver.js
+                            // after it detects the paste and fixes headers
                         } else {
                             showStatus('Content may need manual adjustment', true);
                         }

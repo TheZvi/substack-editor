@@ -523,7 +523,7 @@ async function clickBodyDropdownAndSelectSubheading() {
 }
 
 /**
- * Fix headers after paste
+ * Fix headers after paste, then fix newlines
  */
 async function fixHeadersAfterPaste() {
     console.log("%c[Header Fix] Starting...", 'color: #1DA1F2; font-weight: bold');
@@ -566,6 +566,20 @@ async function fixHeadersAfterPaste() {
     }
 
     console.log(`%c[Header Fix] Done: ${fixed}/${pendingHeaderFixes.length}`, 'color: #00aa00; font-weight: bold');
+
+    // Now fix newlines in blockquotes
+    console.log("%c[Header Fix] Waiting 1s before fixing newlines...", 'color: #1DA1F2');
+    await sleep(1000);
+
+    // Get the original content from storage to find blockquote structure
+    const data = await chrome.storage.local.get('extracted_content');
+    if (data.extracted_content && data.extracted_content.content) {
+        console.log("%c[Newline Fix] Starting...", 'color: #657786; font-weight: bold');
+        const result = await window.fixTwitterNewlines(data.extracted_content.content);
+        console.log("[Newline Fix] Result:", result);
+    } else {
+        console.log("[Newline Fix] No extracted content found, skipping");
+    }
 }
 
 /**
@@ -752,5 +766,113 @@ if (document.readyState === 'complete') {
 }
 
 window.insertTwitterContent = insertTwitterContent;
+
+// ============================================================================
+// Newline Fixer (called separately via popup button)
+// ============================================================================
+
+/**
+ * Find text in editor and position cursor at the end of it
+ */
+function findTextAndPositionCursorForNewline(editor, searchText) {
+    const walker = document.createTreeWalker(
+        editor,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
+    let node;
+    while (node = walker.nextNode()) {
+        const nodeText = node.textContent;
+        const index = nodeText.indexOf(searchText);
+        if (index !== -1) {
+            const range = document.createRange();
+            range.setStart(node, index + searchText.length);
+            range.setEnd(node, index + searchText.length);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Simulate pressing the Enter key
+ */
+function simulateEnterKey(element) {
+    const keyboardEventInit = {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+    };
+    element.dispatchEvent(new KeyboardEvent('keydown', keyboardEventInit));
+    element.dispatchEvent(new KeyboardEvent('keypress', keyboardEventInit));
+    element.dispatchEvent(new KeyboardEvent('keyup', keyboardEventInit));
+}
+
+/**
+ * Fix newlines in blockquotes - called from popup with original HTML content
+ */
+window.fixTwitterNewlines = async function(htmlContent) {
+    console.log("%c[Newline Fixer] Starting...", 'color: #657786; font-weight: bold');
+
+    const editor = findEditorElement();
+    if (!editor) {
+        console.log("Editor not found");
+        return { success: false, error: "Editor not found" };
+    }
+
+    // Parse content and find line break markers
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    const markers = [];
+    const blockquotes = tempDiv.querySelectorAll('blockquote');
+
+    blockquotes.forEach((bq, bqIndex) => {
+        const paragraphs = bq.querySelectorAll('p');
+        console.log(`[Newline Fixer] Blockquote ${bqIndex + 1} has ${paragraphs.length} paragraphs`);
+
+        paragraphs.forEach((p, pIndex) => {
+            if (pIndex < paragraphs.length - 1) {
+                const text = p.textContent.trim();
+                if (text) {
+                    const marker = text.length > 40 ? text.slice(-40) : text;
+                    markers.push({ textEndsWith: marker });
+                    console.log(`[Newline Fixer] Need break after: "...${marker}"`);
+                }
+            }
+        });
+    });
+
+    if (markers.length === 0) {
+        console.log("No line breaks needed");
+        return { success: true, count: 0, message: "No line breaks needed" };
+    }
+
+    console.log(`Found ${markers.length} line breaks to insert`);
+
+    let inserted = 0;
+    for (const marker of markers) {
+        console.log(`Looking for: "...${marker.textEndsWith}"`);
+        const found = findTextAndPositionCursorForNewline(editor, marker.textEndsWith);
+        if (!found) {
+            console.log("  Text not found, skipping");
+            continue;
+        }
+        console.log("  Found! Pressing Enter...");
+        await sleep(100);
+        simulateEnterKey(editor);
+        inserted++;
+        await sleep(200);
+    }
+
+    console.log(`%c[Newline Fixer] Done: ${inserted}/${markers.length}`, 'color: #00aa00; font-weight: bold');
+    return { success: true, count: inserted };
+};
 
 console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Ready`, 'color: #1DA1F2; font-weight: bold');

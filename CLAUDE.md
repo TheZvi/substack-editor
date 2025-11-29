@@ -205,7 +205,48 @@ console.log("Content script loading"); // todo remove
 4. **Manual paste required for article body** - User must Ctrl+V to paste main content. UNFIXABLE: Browser security prevents programmatic paste, and direct DOM insertion breaks Twitter's editor state.
 5. **Block quote formatting lost** - Line breaks and list numberings vanish in block quotes
 6. **Images display as camera icons** - Images not transferred, show placeholder icons
-7. **Header formatting lost** - FIXED in v1.3.0: Headers auto-converted to subheadings after paste via simulated clicks
+7. **Header formatting lost** - FIXED in v1.0.3: Headers auto-converted to subheadings after paste via simulated clicks
+
+## Twitter Article Formatting Techniques
+
+Twitter Articles uses Draft.js editor. Standard DOM manipulation and execCommand don't work - they break the editor state. Instead, use **simulated mouse clicks** to interact with the formatting toolbar.
+
+### Key Functions
+
+**simulateClick(element)** - Sends full mouse event sequence that React recognizes:
+```javascript
+function simulateClick(element) {
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const eventOptions = {
+        bubbles: true, cancelable: true, view: window,
+        clientX: centerX, clientY: centerY,
+        button: 0, buttons: 1
+    };
+    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+    element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+    element.dispatchEvent(new MouseEvent('click', eventOptions));
+    element.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+    element.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+}
+```
+
+### Workflow for Formatting
+
+1. **Find block by text**: Query `.longform-unstyled, [data-block="true"]` and match text content
+2. **Select the block**: Use Range API to select the text span
+3. **Click toolbar button**: Find button in toolbar area (top < 150px) and simulateClick()
+
+### Toolbar Buttons
+- **Body/Subheading dropdown**: Find by text content "Body"/"Heading"/"Subheading"
+- **Blockquote button**: The " icon - find by aria-label containing "quote" or find first button after Body dropdown
+- Buttons are in toolbar area where `rect.top > 50 && rect.top < 150`
+
+### Important Notes
+- Paste listener triggers formatting 1 second after paste to let editor settle
+- Don't check "already formatted" state - just apply the format (checking causes toggle issues)
+- Text matching: use `includes()` not exact match since blocks may have additional content
 
 ## Common Tasks
 

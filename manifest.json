@@ -8,9 +8,10 @@
     "scripting",
     "storage",
     "tabs",
-    "contextMenus",    
+    "contextMenus",
     "commands",
-    "notifications"
+    "notifications",
+    "webNavigation"
   ],
   "host_permissions": [
     "https://*.wordpress.com/*",
@@ -18,7 +19,8 @@
     "https://api.anthropic.com/*",
     "https://*.anthropic.com/*",
     "https://generativelanguage.googleapis.com/*",
-    "https://x.com/*"
+    "https://x.com/*",
+    "https://*.x.com/*"
   ],
   "commands": {        
     "transform-text": {
@@ -38,8 +40,10 @@
       "js": ["receivers/wordpress-receiver.js"]
     },
     {
-      "matches": ["https://x.com/compose/articles*"],
-      "js": ["receivers/twitter-receiver.js"]
+      "matches": ["https://x.com/compose/articles*", "https://x.com/compose/articles/*", "https://x.com/compose/articles/edit/*"],
+      "js": ["receivers/twitter-receiver.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [{
@@ -49,6 +53,7 @@
       "formatters/twitter-formatter.js",
       "receivers/wordpress-receiver.js",
       "receivers/twitter-receiver.js",
+      "receivers/twitter-newline-fixer.js",
       "linkify/default-rules.json",
       "linkify/linkify-controller.js",
       "linkify/ui/manage-linkify-rules.html",
