@@ -590,17 +590,44 @@ async function fixHeadersAfterPaste() {
     } else {
         console.log("[Newline Fix] No extracted content found, skipping");
     }
+
+    // Now handle images if there are any
+    const imageData = await chrome.storage.local.get('twitter_pending_images');
+    if (imageData.twitter_pending_images?.length > 0) {
+        console.log("%c[Image Fix] Starting image insertion flow...", 'color: #E91E63; font-weight: bold');
+        await startImageInsertionFlow(imageData.twitter_pending_images);
+        // Clear images from storage after starting flow
+        await chrome.storage.local.remove('twitter_pending_images');
+    } else {
+        console.log("[Image Fix] No images to insert");
+    }
 }
 
 /**
  * Set up paste listener
  */
 let pasteListenerActive = false;
+let contentPasteProcessed = false;  // Guard against multiple content paste processing
+let imageInsertionInProgress = false;  // Guard against processing during image insertion
+
 function setupPasteListener() {
     if (pasteListenerActive) return;
 
-    document.addEventListener('paste', () => {
+    document.addEventListener('paste', (event) => {
+        // Skip if we're in image insertion mode - those pastes are handled separately
+        if (imageInsertionInProgress) {
+            console.log("[Paste] Skipping - image insertion in progress");
+            return;
+        }
+
+        // Skip if we already processed the content paste
+        if (contentPasteProcessed) {
+            console.log("[Paste] Skipping - content already processed");
+            return;
+        }
+
         console.log("%c[Paste detected] Will fix headers in 1s...", 'color: #1DA1F2');
+        contentPasteProcessed = true;  // Mark as processed
         setTimeout(fixHeadersAfterPaste, 1000);
     }, true);
 
@@ -727,9 +754,22 @@ async function insertTwitterContent() {
             }
             console.log("Content copied to clipboard. Press Ctrl+V (or Cmd+V) in the editor body to paste.");
 
-            // Mark as completed and clear storage to prevent duplicate insertions
+            // Mark as completed but keep images for later insertion flow
             insertionCompleted = true;
             insertionInProgress = false;
+
+            // Save images separately before clearing main content
+            if (images && images.length > 0) {
+                const imagesWithData = images.filter(img => img.imageData && img.imageData.base64);
+                console.log(`[Twitter Receiver] Images: ${images.length} total, ${imagesWithData.length} with data`);
+                if (imagesWithData.length > 0) {
+                    await chrome.storage.local.set({ 'twitter_pending_images': imagesWithData });
+                    console.log(`[Twitter Receiver] Saved ${imagesWithData.length} images for post-paste insertion`);
+                } else {
+                    console.log(`[Twitter Receiver] No images have data - skipping image save`);
+                }
+            }
+
             await chrome.storage.local.remove('twitter_formatted_content');
             console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Storage cleared, insertion complete`, 'color: #1DA1F2');
 
@@ -951,6 +991,332 @@ function findJunctionAndPositionCursor(editor, endOfCurrent, startOfNext) {
     }
 
     return false;
+}
+
+// ============================================================================
+// Image Insertion Flow
+// ============================================================================
+
+let pendingImages = [];
+let currentImageIndex = 0;
+let imageIndicator = null;
+let imagePasteListener = null;
+
+/**
+ * Create a visual indicator for image paste prompts
+ */
+function createImageIndicator() {
+    // Remove existing indicator if any
+    removeImageIndicator();
+
+    const indicator = document.createElement('div');
+    indicator.id = 'twitter-image-indicator';
+    indicator.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #E91E63, #9C27B0);
+        color: white;
+        padding: 16px 24px;
+        border-radius: 12px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        z-index: 999999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        text-align: center;
+        min-width: 300px;
+    `;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size: 14px; opacity: 0.9; margin-bottom: 8px;';
+    title.textContent = 'Image Insertion';
+
+    const message = document.createElement('div');
+    message.id = 'twitter-image-message';
+    message.style.cssText = 'font-size: 18px;';
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size: 12px; opacity: 0.8; margin-top: 8px;';
+    hint.textContent = 'Cursor positioned. Press Ctrl+V to insert.';
+
+    indicator.appendChild(title);
+    indicator.appendChild(message);
+    indicator.appendChild(hint);
+    document.body.appendChild(indicator);
+
+    imageIndicator = indicator;
+    return indicator;
+}
+
+/**
+ * Update the indicator message
+ */
+function updateImageIndicator(current, total, altText) {
+    const message = document.getElementById('twitter-image-message');
+    if (message) {
+        const displayAlt = altText ? ` "${altText.substring(0, 30)}${altText.length > 30 ? '...' : ''}"` : '';
+        message.textContent = `Image ${current} of ${total}${displayAlt}`;
+    }
+}
+
+/**
+ * Remove the indicator
+ */
+function removeImageIndicator() {
+    if (imageIndicator) {
+        imageIndicator.remove();
+        imageIndicator = null;
+    }
+    const existing = document.getElementById('twitter-image-indicator');
+    if (existing) existing.remove();
+}
+
+/**
+ * Show completion message
+ */
+function showImageComplete(count) {
+    removeImageIndicator();
+
+    const indicator = document.createElement('div');
+    indicator.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #4CAF50, #2E7D32);
+        color: white;
+        padding: 16px 24px;
+        border-radius: 12px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 18px;
+        font-weight: 600;
+        z-index: 999999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    `;
+    indicator.textContent = `✓ All ${count} images inserted!`;
+    document.body.appendChild(indicator);
+
+    setTimeout(() => indicator.remove(), 3000);
+}
+
+/**
+ * Copy pre-fetched image data to clipboard
+ * imageData contains base64 string and mimeType from formatter
+ * Note: Clipboard API only supports PNG, so we convert if needed
+ */
+async function copyImageToClipboard(imageData) {
+    if (!imageData || !imageData.base64) {
+        console.error('[Image Fix] No image data available');
+        return false;
+    }
+
+    console.log(`[Image Fix] Copying image: ${imageData.mimeType}`);
+
+    try {
+        // Convert base64 data URL to blob
+        const response = await fetch(imageData.base64);
+        let blob = await response.blob();
+
+        console.log(`[Image Fix] Blob created: ${blob.type}, ${blob.size} bytes`);
+
+        // Clipboard API only supports PNG - convert JPEG/other formats
+        if (blob.type !== 'image/png') {
+            console.log(`[Image Fix] Converting ${blob.type} to PNG for clipboard...`);
+            blob = await convertToPng(blob);
+            console.log(`[Image Fix] Converted to PNG: ${blob.size} bytes`);
+        }
+
+        // Copy to clipboard
+        const clipboardItem = new ClipboardItem({
+            'image/png': blob
+        });
+
+        await navigator.clipboard.write([clipboardItem]);
+        console.log(`[Image Fix] Image copied to clipboard`);
+        return true;
+    } catch (error) {
+        console.error('[Image Fix] Failed to copy image:', error);
+        return false;
+    }
+}
+
+/**
+ * Convert any image blob to PNG using canvas
+ */
+async function convertToPng(blob) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            canvas.toBlob(resolve, 'image/png');
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(blob);
+    });
+}
+
+/**
+ * Position cursor after the marker text
+ */
+function positionCursorForImage(editor, positionMarker) {
+    if (!positionMarker) {
+        // No marker - position at end of content
+        console.log('[Image Fix] No position marker, positioning at end');
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false); // Collapse to end
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return true;
+    }
+
+    // Find the marker text and position after it
+    const fullText = editor.textContent;
+    const markerIndex = fullText.indexOf(positionMarker);
+
+    if (markerIndex === -1) {
+        console.log(`[Image Fix] Position marker not found: "${positionMarker.substring(0, 30)}..."`);
+        return false;
+    }
+
+    const targetPosition = markerIndex + positionMarker.length;
+
+    // Walk through text nodes to find position
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null, false);
+    let currentPos = 0;
+    let node;
+
+    while (node = walker.nextNode()) {
+        const nodeLength = node.textContent.length;
+        if (currentPos + nodeLength >= targetPosition) {
+            const offsetInNode = targetPosition - currentPos;
+            const range = document.createRange();
+            range.setStart(node, offsetInNode);
+            range.setEnd(node, offsetInNode);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            console.log(`[Image Fix] Cursor positioned after marker`);
+            return true;
+        }
+        currentPos += nodeLength;
+    }
+
+    return false;
+}
+
+/**
+ * Process next image in queue
+ */
+async function processNextImage() {
+    if (currentImageIndex >= pendingImages.length) {
+        // All done!
+        console.log('%c[Image Fix] All images processed!', 'color: #4CAF50; font-weight: bold');
+        showImageComplete(pendingImages.length);
+        cleanupImageFlow();
+        return;
+    }
+
+    const image = pendingImages[currentImageIndex];
+    console.log(`[Image Fix] Processing image ${currentImageIndex + 1}/${pendingImages.length}`);
+
+    // Skip images that failed to fetch during formatting
+    if (!image.imageData) {
+        console.log('[Image Fix] Image has no data (failed during extraction), skipping...');
+        currentImageIndex++;
+        await processNextImage();
+        return;
+    }
+
+    // Update indicator
+    updateImageIndicator(currentImageIndex + 1, pendingImages.length, image.alt);
+
+    // Find editor and position cursor
+    const editor = findEditorElement();
+    if (editor) {
+        positionCursorForImage(editor, image.positionMarker);
+        editor.focus();
+    }
+
+    // Copy pre-fetched image to clipboard
+    const success = await copyImageToClipboard(image.imageData);
+    if (!success) {
+        console.log('[Image Fix] Failed to copy image, skipping...');
+        currentImageIndex++;
+        await processNextImage();
+    }
+    // Otherwise, wait for user to paste
+}
+
+/**
+ * Handle paste event during image insertion
+ */
+function handleImagePaste(event) {
+    console.log('[Image Fix] Paste detected during image flow');
+
+    // Small delay to let Twitter process the image
+    setTimeout(async () => {
+        currentImageIndex++;
+        await sleep(2000); // Wait for Twitter's processing (the dark screen)
+        await processNextImage();
+    }, 500);
+}
+
+/**
+ * Clean up image insertion flow
+ */
+function cleanupImageFlow() {
+    if (imagePasteListener) {
+        document.removeEventListener('paste', imagePasteListener, true);
+        imagePasteListener = null;
+    }
+    pendingImages = [];
+    currentImageIndex = 0;
+    imageInsertionInProgress = false;  // Reset flag
+    removeImageIndicator();
+}
+
+/**
+ * Start the image insertion flow
+ */
+async function startImageInsertionFlow(images) {
+    if (!images || images.length === 0) {
+        console.log('[Image Fix] No images to insert');
+        return;
+    }
+
+    // Filter out images that don't have data
+    const validImages = images.filter(img => img.imageData && img.imageData.base64);
+    if (validImages.length === 0) {
+        console.log('[Image Fix] No valid images with data to insert');
+        return;
+    }
+
+    console.log(`%c[Image Fix] Starting flow for ${validImages.length} images (${images.length - validImages.length} skipped - no data)`, 'color: #E91E63; font-weight: bold');
+
+    imageInsertionInProgress = true;  // Set flag to prevent content paste handler
+    pendingImages = validImages;
+    currentImageIndex = 0;
+
+    // Create indicator
+    createImageIndicator();
+
+    // Set up paste listener for image flow
+    imagePasteListener = handleImagePaste;
+    document.addEventListener('paste', imagePasteListener, true);
+
+    // Wait a moment for UI to settle
+    await sleep(500);
+
+    // Start with first image
+    await processNextImage();
 }
 
 console.log(`%c[Twitter Receiver v${TWITTER_RECEIVER_VERSION}] Ready`, 'color: #1DA1F2; font-weight: bold');

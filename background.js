@@ -62,6 +62,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// Handle image fetch requests from content scripts (bypasses CORS)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'fetch-image') {
+    (async () => {
+      try {
+        console.log('[Background] Fetching image:', request.url.substring(0, 80));
+        const response = await fetch(request.url);
+
+        if (!response.ok) {
+          sendResponse({ success: false, error: `HTTP ${response.status}` });
+          return;
+        }
+
+        const blob = await response.blob();
+
+        // Convert to base64
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          console.log('[Background] Image converted, size:', Math.round(reader.result.length / 1024), 'KB');
+          sendResponse({
+            success: true,
+            base64: reader.result,
+            mimeType: blob.type || 'image/jpeg'
+          });
+        };
+        reader.onerror = () => {
+          sendResponse({ success: false, error: 'FileReader error' });
+        };
+        reader.readAsDataURL(blob);
+      } catch (error) {
+        console.error('[Background] Image fetch error:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true; // Keep channel open for async response
+  }
+});
+
 // Add this as a new listener at the end of background.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'claude-api-request' || request.action === 'gemini-api-request') {

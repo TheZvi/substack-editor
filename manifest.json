@@ -20,7 +20,9 @@
     "https://*.anthropic.com/*",
     "https://generativelanguage.googleapis.com/*",
     "https://x.com/*",
-    "https://*.x.com/*"
+    "https://*.x.com/*",
+    "https://substackcdn.com/*",
+    "https://*.substackcdn.com/*"
   ],
   "commands": {        
     "transform-text": {
