@@ -542,11 +542,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const linkifyResults = results?.[0]?.result;
                 console.log("Linkify results:", linkifyResults);
-                
+
                 if (linkifyResults?.success) {
-                    showStatus('Content linkified successfully');
-                    if (linkifyResults.links) {
-                        showLinkifyLog(linkifyResults.links);
+                    const linkCount = linkifyResults.results?.length || 0;
+                    if (linkCount > 0) {
+                        const linkedTexts = linkifyResults.results.map(r => `"${r.text}"`).join(', ');
+                        showStatus(`Linkified ${linkCount} link${linkCount === 1 ? '' : 's'}: ${linkedTexts}`, false, 8000);
+                    } else {
+                        showStatus('No links added (no matches found)');
                     }
                 } else {
                     showStatus(linkifyResults?.error || 'Error linkifying content', true);
@@ -590,28 +593,55 @@ document.addEventListener('DOMContentLoaded', () => {
 function generateTOC(postUrl) {
     try {
         console.log("Starting TOC generation");
-        
+
         // Get and filter headers
         const headers = document.querySelectorAll('h1, h2, h3, h4');
         let headersArray = Array.from(headers)
             .filter(header => header.textContent.trim() !== "");
-        
+
         // Filter out interface titles
         const cutoffTitles = ["Preview post", "Post info", "Post settings", "Publish", "Heads up!"];
-        const cutoffIndex = headersArray.findIndex(header => 
+        const cutoffIndex = headersArray.findIndex(header =>
             cutoffTitles.includes(header.textContent.trim())
         );
         if (cutoffIndex !== -1) {
             headersArray = headersArray.slice(0, cutoffIndex);
         }
-        
+
         if (headersArray.length === 0) {
             console.log("No headers found");
             return { success: false, error: "No headers found to generate TOC" };
         }
-        
-        // Create TOC container
+
+        // Check for existing TOC and extract subtitle text
         const tocContainerId = 'generated-toc';
+        const existingSubtitles = {};
+        const existingToc = document.getElementById(tocContainerId);
+        if (existingToc) {
+            const existingItems = existingToc.querySelectorAll('li');
+            existingItems.forEach(item => {
+                const link = item.querySelector('a');
+                if (link) {
+                    // Get the link text (the section title)
+                    const linkText = link.textContent.trim();
+                    // Get the full item text and extract what comes after the link
+                    const fullText = item.textContent.trim();
+                    // The subtitle is everything after the link text
+                    if (fullText.length > linkText.length) {
+                        const subtitle = fullText.substring(linkText.length).trim();
+                        if (subtitle) {
+                            // Store by a normalized version of the title (remove trailing punctuation for matching)
+                            const normalizedTitle = linkText.replace(/[.!?]\s*$/, '').replace(/\s*\(Blank\)\s*$/, '').trim();
+                            existingSubtitles[normalizedTitle] = subtitle;
+                            console.log(`Found existing subtitle for "${normalizedTitle}": "${subtitle}"`);
+                        }
+                    }
+                }
+            });
+            // Remove existing TOC
+            existingToc.remove();
+        }
+
         const labelAsBlank = ' (Blank)';
         
         let tocContainer = document.createElement('div');
@@ -644,10 +674,12 @@ function generateTOC(postUrl) {
             // Create TOC entry
             let tocItem = document.createElement('li');
             let tocLink = document.createElement('a');
-            tocLink.textContent = header.textContent.trim() + 
-                               (header.textContent.trim().endsWith('.') ? '' : '.') +
+            const headerText = header.textContent.trim();
+            const endsWithPunctuation = /[.!?]$/.test(headerText);
+            tocLink.textContent = headerText +
+                               (endsWithPunctuation ? '' : '.') +
                                (isEmpty ? labelAsBlank : '');
-            
+
             // Handle URLs
             const urlMatch = postUrl.match(/^(https:\/\/[^\/]+)\/publish\/post\/(\d+)/);
             if (urlMatch) {
@@ -658,8 +690,16 @@ function generateTOC(postUrl) {
             } else {
                 tocLink.href = `#${id}`;
             }
-            
+
             tocItem.appendChild(tocLink);
+
+            // Check for existing subtitle text and append it
+            const normalizedHeaderText = headerText.replace(/[.!?]\s*$/, '').trim();
+            if (existingSubtitles[normalizedHeaderText]) {
+                const subtitleSpan = document.createTextNode(' ' + existingSubtitles[normalizedHeaderText]);
+                tocItem.appendChild(subtitleSpan);
+            }
+
             tocList.appendChild(tocItem);
         });
         

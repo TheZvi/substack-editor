@@ -7,15 +7,15 @@ class TransformController {
         this.api = new window.GeminiApi();
         this.rules = {
             transformationRules: [
-                { "priority": 0, "description": "CRITICAL: NEVER MODIFY ANY OF THESE: 1) Never expand 'ASI', 'AGI', 'AI', 'GPT', 'LLM', or 'NLP' into full words 2) Never change single quotes (') to double quotes (\") or vice versa. Leave all quotes exactly as they appear."                 },
+                { "priority": 0, "description": "CRITICAL: NEVER MODIFY ANY OF THESE: 1) Never expand 'ASI', 'AGI', 'AI', 'GPT', 'LLM', or 'NLP' into full words 2) Never change single quotes (') to double quotes (\") or vice versa. Leave all quotes exactly as they appear." },
                 { "priority": 1, "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS" },
                 { "priority": 2, "description": "Expand all abbreviations and make any other fixes according to the New York Times style guide" },
                 { "priority": 3, "description": "Remove excessive whitespace and newlines while preserving paragraph breaks" },
                 { "priority": 4, "description": "Preserve hashtags and URLs exactly as written" },
-                { "priority": 5, "descirption": "If you know the name an @mention refers to, replace it with that name, otherwise leave it exactly as is."},
+                { "priority": 5, "description": "If you know the name an @mention refers to, replace it with that name, otherwise leave it exactly as is." },
                 { "priority": 6, "description": "Correct obvious punctuation errors, including proper comma usage" },
                 { "priority": 7, "description": "Remove extra line breaks before and after @mentions" },
-                { "priority": 8, "description": "Convert informal numbered lists into proper HTML ordered lists" },
+                { "priority": 8, "description": "NUMBERED LISTS: If text contains numbered items (like '1. item' or '2. item'), preserve the numbering format exactly. Keep each numbered item as a separate paragraph with its number prefix (1., 2., etc.). Do NOT remove the numbers or merge items together." },
                 { "priority": 9, "description": "Fix all spelling and grammar errors according to the New York Times style guide, but do not change capitalization of acronyms." }
             ]
         };

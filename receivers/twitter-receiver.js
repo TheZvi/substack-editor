@@ -716,14 +716,20 @@ async function insertTwitterContent() {
         pendingHeaderFixes = headers || [];
         console.log(`Stored ${pendingHeaderFixes.length} headers for fixing after paste`);
 
-        // Step 1: Try to click the pencil icon to open new article
-        console.log("Step 1: Clicking pencil icon");
-        const pencilClicked = await clickPencilIcon();
-        if (pencilClicked) {
-            console.log("Pencil clicked successfully, waiting for editor...");
-            await sleep(CONFIG.pencilClickDelay);
+        // Step 1: Check if we're already on the compose page - if so, skip pencil click
+        // The popup.js already opened compose/articles, so clicking pencil would create a duplicate draft
+        const currentUrl = window.location.href;
+        if (currentUrl.includes('compose/articles')) {
+            console.log("Step 1: Already on compose/articles page, skipping pencil click");
         } else {
-            console.log("Pencil click failed, editor may already be open");
+            console.log("Step 1: Not on compose page, clicking pencil icon");
+            const pencilClicked = await clickPencilIcon();
+            if (pencilClicked) {
+                console.log("Pencil clicked successfully, waiting for editor...");
+                await sleep(CONFIG.pencilClickDelay);
+            } else {
+                console.log("Pencil click failed, editor may already be open");
+            }
         }
 
         // Step 2: EXPERIMENTAL - Try to insert title automatically
@@ -951,7 +957,8 @@ window.fixTwitterNewlines = async function(htmlContent) {
 };
 
 /**
- * Fix numbered lists in blockquotes - insert the numbers that got stripped
+ * Fix numbered lists in blockquotes ONLY - insert the numbers that got stripped
+ * Lists outside blockquotes preserve their HTML structure and don't need fixing.
  * Handles nested lists with different numbering schemes:
  * - Level 1: 1, 2, 3...
  * - Level 2: a, b, c... (indented 4 spaces)
@@ -966,7 +973,7 @@ window.fixTwitterNumberedLists = async function(htmlContent) {
         return { success: false, error: "Editor not found" };
     }
 
-    // Parse content and find numbered list items
+    // Parse content and find numbered list items ONLY inside blockquotes
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = htmlContent;
     const listItems = [];
@@ -1017,13 +1024,16 @@ window.fixTwitterNumberedLists = async function(htmlContent) {
         });
     }
 
-    // Find top-level ordered lists (not nested inside other lists)
-    const topLevelOls = tempDiv.querySelectorAll('ol');
-    topLevelOls.forEach(ol => {
-        // Only process if this is a top-level list (not nested)
-        if (!ol.parentElement || ol.parentElement.tagName !== 'LI') {
-            processOrderedList(ol, 0);
-        }
+    // ONLY find ordered lists that are inside blockquotes
+    const blockquotes = tempDiv.querySelectorAll('blockquote');
+    blockquotes.forEach(bq => {
+        const olsInBlockquote = bq.querySelectorAll('ol');
+        olsInBlockquote.forEach(ol => {
+            // Only process if this is a top-level list within the blockquote (not nested inside another list)
+            if (!ol.parentElement || ol.parentElement.tagName !== 'LI') {
+                processOrderedList(ol, 0);
+            }
+        });
     });
 
     if (listItems.length === 0) {
@@ -1043,6 +1053,20 @@ window.fixTwitterNumberedLists = async function(htmlContent) {
         if (!found) {
             console.log("  Text not found, skipping");
             continue;
+        }
+
+        // Check if this text ALREADY has a number prefix in the editor
+        // This happens when the list is outside a blockquote and Twitter preserved its structure
+        const editorText = editor.textContent;
+        const itemIndex = editorText.indexOf(item.textStart);
+        if (itemIndex > 0) {
+            // Look at what comes before this text
+            const textBefore = editorText.substring(Math.max(0, itemIndex - 10), itemIndex);
+            // Check if it already has a number followed by period/space
+            if (/\d+\.\s*$/.test(textBefore) || /[a-z]\.\s*$/.test(textBefore) || /[ivx]+\.\s*$/i.test(textBefore)) {
+                console.log(`  Already has number prefix ("${textBefore.trim()}"), skipping`);
+                continue;
+            }
         }
 
         // Build the prefix: indent + number + ". "
