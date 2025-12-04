@@ -13,7 +13,8 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nAdd automatic header-to-subheading conversion for Twitter Articles (v1.0.3)\n\n- Formatter now collects header text (h1-h6) for post-paste processing\n- Receiver detects paste events and automatically converts headers to subheadings\n- Uses simulated mouse clicks to interact with Twitter''s formatting toolbar\n- Updates CLAUDE.md to document Twitter Article posting issues and fixes\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nAdd automatic blockquote newline fixing for Twitter Articles (v1.0.4)\n\n- After headers are fixed, automatically fix missing newlines in blockquotes\n- Parses original HTML content to find multi-paragraph blockquotes\n- Positions cursor and simulates Enter key to restore line breaks\n- Removed separate \"Fix Twitter Newlines\" button - now integrated into flow\n- Added webNavigation permission and updated content script matching\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

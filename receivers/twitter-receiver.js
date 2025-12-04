@@ -716,13 +716,13 @@ async function insertTwitterContent() {
         pendingHeaderFixes = headers || [];
         console.log(`Stored ${pendingHeaderFixes.length} headers for fixing after paste`);
 
-        // Step 1: Check if we're already on the compose page - if so, skip pencil click
-        // The popup.js already opened compose/articles, so clicking pencil would create a duplicate draft
-        const currentUrl = window.location.href;
-        if (currentUrl.includes('compose/articles')) {
-            console.log("Step 1: Already on compose/articles page, skipping pencil click");
+        // Step 1: Check if editor is already visible - if so, skip pencil click
+        // The popup.js opens compose/articles, which should show editor, but we need to verify
+        const editorAlreadyVisible = await checkEditorAppeared();
+        if (editorAlreadyVisible) {
+            console.log("Step 1: Editor already visible, skipping pencil click");
         } else {
-            console.log("Step 1: Not on compose page, clicking pencil icon");
+            console.log("Step 1: Editor not visible, clicking pencil icon");
             const pencilClicked = await clickPencilIcon();
             if (pencilClicked) {
                 console.log("Pencil clicked successfully, waiting for editor...");
