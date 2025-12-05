@@ -100,7 +100,8 @@ document.addEventListener('DOMContentLoaded', () => {
         wordpress: document.getElementById('post-wordpress'),
         twitter: document.getElementById('post-twitter'),
         linkify: document.getElementById('linkify'),
-        manageLinkifyRules: document.getElementById('manage-linkify-rules')
+        manageLinkifyRules: document.getElementById('manage-linkify-rules'),
+        cleanLinkSources: document.getElementById('clean-link-sources')
     };
 
     // Verify all buttons exist
@@ -575,6 +576,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Clean Link Sources Button Handler
+    if (buttons.cleanLinkSources) {
+        buttons.cleanLinkSources.addEventListener('click', async () => {
+            console.log("Clean link sources button clicked");
+            try {
+                const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+
+                const results = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: cleanLinkSources
+                });
+
+                const result = results?.[0]?.result;
+                console.log("Clean link sources result:", result);
+
+                if (result?.success) {
+                    if (result.count > 0) {
+                        showStatus(`Cleaned ${result.count} link${result.count === 1 ? '' : 's'}`);
+                    } else {
+                        showStatus('No links with query parameters found');
+                    }
+                } else {
+                    showStatus(result?.error || 'Error cleaning links', true);
+                }
+            } catch (error) {
+                console.error("Clean link sources error:", error);
+                showStatus('Error: ' + error.message, true);
+            }
+        });
+    }
+
     // Before initializing API Key Management
     console.log("About to call initializeApiKeyManagement");
     initializeApiKeyManagement();
@@ -584,6 +616,52 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/**
+ * Strips query parameters from all links in the Substack editor
+ * @returns {Object} Result object with success status and count of cleaned links
+ */
+function cleanLinkSources() {
+    try {
+        console.log("Starting cleanLinkSources");
+
+        // Find the editor - try multiple selectors used by Substack
+        const editor = document.querySelector('.ProseMirror') ||
+                      document.querySelector('[contenteditable="true"]') ||
+                      document.querySelector('div[role="article"]');
+
+        if (!editor) {
+            console.error("Could not find editor element");
+            return { success: false, error: "Could not find editor" };
+        }
+
+        const links = editor.querySelectorAll('a[href]');
+        console.log(`Found ${links.length} links to check`);
+
+        let count = 0;
+        links.forEach(link => {
+            try {
+                const url = new URL(link.href);
+                if (url.search) {  // has query parameters
+                    console.log(`Cleaning: ${link.href}`);
+                    url.search = '';  // remove all query params
+                    link.href = url.toString();
+                    count++;
+                }
+            } catch (e) {
+                // Skip invalid URLs
+                console.log(`Skipping invalid URL: ${link.href}`);
+            }
+        });
+
+        console.log(`Cleaned ${count} links`);
+        return { success: true, count };
+
+    } catch (e) {
+        console.error("Error in cleanLinkSources:", e);
+        return { success: false, error: e.message };
+    }
+}
 
 /**
  * Generates a Table of Contents for the current document
