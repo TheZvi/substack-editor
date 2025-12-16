@@ -83,13 +83,48 @@
       width: 80px;
     }
     /* Twitter button styling */
-    #post-twitter {
+    #post-twitter, #sync-twitter-list {
       background: #1DA1F2;
       color: white;
       border: 1px solid #1a91da;
     }
-    #post-twitter:hover {
+    #post-twitter:hover, #sync-twitter-list:hover {
       background: #1a91da;
+    }
+    /* Twitter List Sync section */
+    #twitter-sync-section select {
+      width: 100%;
+      padding: 4px;
+      margin: 4px 0;
+    }
+    #twitter-sync-section .sync-options {
+      display: flex;
+      gap: 4px;
+      margin: 8px 0;
+    }
+    #twitter-sync-section .sync-options button {
+      flex: 1;
+      font-size: 11px;
+      padding: 6px 2px;
+    }
+    #twitter-sync-status {
+      font-size: 12px;
+      margin-top: 8px;
+      padding: 5px;
+      border-radius: 4px;
+      display: none;
+    }
+    #twitter-sync-status.info {
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+    }
+    #twitter-sync-status.success {
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+    }
+    #twitter-sync-status.error {
+      background: #ffebee;
+      border: 1px solid #ef9a9a;
     }
   </style>
 </head>
@@ -101,6 +136,36 @@
   <button id="linkify">Linkify Content</button>
   <button id="manage-linkify-rules">Manage Linkify Rules</button>
   <button id="clean-link-sources">Clean Link Sources</button>
+
+  <div id="twitter-sync-section" class="section">
+    <h3>Twitter List Sync</h3>
+    <div class="input-group">
+      <label for="twitter-username">Username:</label>
+      <input type="text" id="twitter-username" placeholder="@username" style="width: 100px;">
+      <button id="save-twitter-username">Save</button>
+    </div>
+    <div class="input-group">
+      <label for="twitter-source-list">Source List:</label>
+      <input type="text" id="twitter-source-list" placeholder="(empty = Following)" style="width: 100px;">
+      <button id="save-source-list">Save</button>
+    </div>
+    <div class="input-group">
+      <label for="twitter-list-id">Dest List:</label>
+      <input type="text" id="twitter-list-id" placeholder="List ID" style="width: 100px;">
+      <button id="save-twitter-list">Save</button>
+    </div>
+    <div class="sync-options">
+      <button id="sync-add-only" title="Add accounts you follow to the list">Add Only</button>
+      <button id="sync-remove-only" title="Remove accounts from list that you don't follow">Remove Only</button>
+      <button id="sync-full" title="Make list exactly match your following">Full Sync</button>
+    </div>
+    <div style="font-size: 11px; color: #666; margin-top: 4px;">
+      Source empty = sync from Following (must be on /following page)<br>
+      Source filled = sync from that list (can be anyone's public list)
+    </div>
+    <div id="twitter-sync-status"></div>
+  </div>
+
   <div id="status"></div>
   <div id="removal-log"></div>
   <div id="linkify-log"></div>

@@ -122,8 +122,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               sendResponse({ success: true, data });
           } catch (error) {
               console.error("API error in background:", error);
-              sendResponse({ 
-                  success: false, 
+              sendResponse({
+                  success: false,
                   error: error.message || 'Unknown error occurred'
               });
           }
@@ -131,3 +131,163 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
   }
 });
+
+// ============================================================================
+// Twitter List Sync - Background Script Handler
+// ============================================================================
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'twitter-list-sync') {
+    performTwitterListSync(request.username, request.destListId, request.sourceListId, request.mode, request.tabId)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async
+  }
+});
+
+async function performTwitterListSync(username, destListId, sourceListId, mode, currentTabId) {
+  console.log(`[Background] Starting Twitter sync: ${mode} for @${username}`);
+  console.log(`[Background] Source: ${sourceListId || 'Following'}, Dest: ${destListId}`);
+
+  try {
+    let sourceAccounts = [];
+
+    // Step 1: Get source accounts (either from Following or from a source list)
+    if (!sourceListId) {
+      // Source is Following - need to be on the following page
+      console.log('[Background] Step 1: Checking current tab for Following page...');
+
+      const tab = await chrome.tabs.get(currentTabId);
+      const currentUrl = tab.url?.toLowerCase() || '';
+      const isFollowingPage = currentUrl.includes('x.com/') && currentUrl.includes('/following');
+
+      console.log('[Background] Current URL:', tab.url);
+      console.log('[Background] Is following page:', isFollowingPage);
+
+      if (!isFollowingPage) {
+        return {
+          success: false,
+          error: `Please navigate to x.com/${username}/following first`
+        };
+      }
+
+      // Scrape following from current page
+      console.log('[Background] Step 2: Scraping Following list (auto-scrolling)...');
+      await chrome.scripting.executeScript({
+        target: { tabId: currentTabId },
+        files: ['twitter/twitter-list-sync.js']
+      });
+
+      await sleep(500);
+
+      const followingResult = await chrome.scripting.executeScript({
+        target: { tabId: currentTabId },
+        func: () => window.scrapeFollowingList()
+      });
+
+      sourceAccounts = followingResult?.[0]?.result?.usernames || [];
+      console.log(`[Background] Found ${sourceAccounts.length} following`);
+
+    } else {
+      // Source is another list - open it and scrape
+      console.log(`[Background] Step 1: Opening source list ${sourceListId}...`);
+      const sourceListUrl = `https://x.com/i/lists/${sourceListId}/members`;
+      const sourceTab = await chrome.tabs.create({ url: sourceListUrl, active: true });
+
+      await waitForTabComplete(sourceTab.id);
+      await sleep(3000);
+
+      await chrome.scripting.executeScript({
+        target: { tabId: sourceTab.id },
+        files: ['twitter/twitter-list-sync.js']
+      });
+
+      await sleep(1000);
+
+      console.log('[Background] Step 2: Scraping source list...');
+      const sourceResult = await chrome.scripting.executeScript({
+        target: { tabId: sourceTab.id },
+        func: () => window.scrapeListMembers()
+      });
+
+      sourceAccounts = sourceResult?.[0]?.result?.usernames || [];
+      console.log(`[Background] Found ${sourceAccounts.length} accounts in source list`);
+
+      // Close source tab
+      await chrome.tabs.remove(sourceTab.id);
+    }
+
+    if (sourceAccounts.length === 0) {
+      return { success: false, error: 'Could not find any accounts in source. Check browser console for details.' };
+    }
+
+    // Step 3: Open destination list members page and scrape
+    console.log('[Background] Step 3: Opening destination list members page...');
+    const listMembersUrl = `https://x.com/i/lists/${destListId}/members`;
+    const listTab = await chrome.tabs.create({ url: listMembersUrl, active: true });
+
+    await waitForTabComplete(listTab.id);
+    await sleep(3000);
+
+    await chrome.scripting.executeScript({
+      target: { tabId: listTab.id },
+      files: ['twitter/twitter-list-sync.js']
+    });
+
+    await sleep(1000);
+
+    const listResult = await chrome.scripting.executeScript({
+      target: { tabId: listTab.id },
+      func: () => window.scrapeListMembers()
+    });
+
+    const listMembers = listResult?.[0]?.result?.usernames || [];
+    console.log(`[Background] Found ${listMembers.length} members in destination list`);
+
+    // Step 4: Perform sync
+    console.log('[Background] Step 4: Performing sync...');
+    console.log(`[Background] Source: ${sourceAccounts.length}, Dest: ${listMembers.length}, Mode: ${mode}`);
+
+    const syncResult = await chrome.scripting.executeScript({
+      target: { tabId: listTab.id },
+      func: (listId, sourceAccounts, listMembers, mode) => {
+        return window.performListSync(listId, sourceAccounts, listMembers, mode);
+      },
+      args: [destListId, sourceAccounts, listMembers, mode]
+    });
+
+    const result = syncResult?.[0]?.result;
+    console.log('[Background] Sync result:', result);
+
+    // Close list tab after delay
+    setTimeout(() => chrome.tabs.remove(listTab.id), 5000);
+
+    return result || { success: false, error: 'No result from sync' };
+
+  } catch (error) {
+    console.error('[Background] Twitter sync error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+function waitForTabComplete(tabId) {
+  return new Promise((resolve) => {
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+
+    // Timeout fallback
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 30000);
+  });
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}

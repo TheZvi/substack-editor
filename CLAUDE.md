@@ -12,6 +12,8 @@ A Chrome extension that helps writers format, edit, and publish content on Subst
 - LLM-powered text transformation (Gemini/Claude APIs)
 - Table of Contents management
 - WordPress crossposting
+- Twitter Article crossposting
+- Twitter List Sync (sync Following to a List, or List-to-List transfers)
 - Intelligent linkification of concepts
 
 ## Directory Structure
@@ -36,6 +38,9 @@ substack-editor/
 ├── receivers/
 │   ├── wordpress-receiver.js         # Inserts content into WordPress editor
 │   └── twitter-receiver.js           # Inserts content into Twitter Articles editor
+│
+├── twitter/
+│   └── twitter-list-sync.js          # Twitter List sync functionality
 │
 ├── linkify/
 │   ├── default-rules.json            # Predefined link rules
@@ -74,8 +79,9 @@ substack-editor/
 - **JavaScript (ES6+)** - Vanilla JS, no frameworks
 - **Chrome Extension APIs (Manifest V3)**
 - **LLM APIs:**
-  - Google Gemini (`gemini-1.5-flash-8b`)
+  - Google Gemini (configurable model, default `gemini-2.5-flash`)
   - Anthropic Claude (`claude-3-opus-20240229`) - Note: Currently not working
+- **Twitter Internal APIs** - GraphQL endpoints for list management (uses browser session auth)
 
 ## Architecture
 
@@ -247,6 +253,45 @@ function simulateClick(element) {
 - Paste listener triggers formatting 1 second after paste to let editor settle
 - Don't check "already formatted" state - just apply the format (checking causes toggle issues)
 - Text matching: use `includes()` not exact match since blocks may have additional content
+
+## Twitter List Sync
+
+Syncs your Twitter Following list to a Twitter List, or transfers members between lists. Useful for creating a "Following" list that can be used instead of Twitter's "For You" algorithmic feed.
+
+### Setup
+1. Enter your Twitter username (without @)
+2. Enter a destination List ID (find this in the list's URL: `x.com/i/lists/LISTID`)
+3. Optionally enter a source List ID (leave empty to sync from Following)
+
+### Sync Modes
+- **Add Only**: Adds accounts from source to destination (won't remove anyone)
+- **Remove Only**: Removes accounts from destination that aren't in source
+- **Full Sync**: Makes destination exactly match source
+
+### How It Works
+1. **Scraping**: Opens source page (Following or List) and auto-scrolls to load all accounts
+2. **Collection**: Extracts usernames from `[data-testid="UserCell"]` elements as they appear
+3. **Comparison**: Compares source accounts with destination list members
+4. **Sync**: Uses Twitter's internal GraphQL APIs to add/remove members
+
+### Rate Limiting
+Twitter rate-limits API calls. The sync includes:
+- 3 second delay between add/remove operations
+- Exponential backoff (60s, 120s, 240s) on 429 errors
+- Auto-pause (60s) after 3 consecutive errors
+
+For large syncs (200+ accounts), expect ~15-20 minutes to complete.
+
+### Key Files
+- `twitter/twitter-list-sync.js` - Scraping and sync logic
+- `background.js` - Orchestrates the sync process (stays alive when popup closes)
+- `popup.js` / `popup.html` - UI for settings and sync buttons
+
+### Technical Notes
+- Uses CSRF token from cookies for authentication
+- GraphQL endpoints: `ListAddMember`, `ListRemoveMember`, `UserByScreenName`
+- Twitter virtualizes long lists but keeps DOM elements after scrolling
+- The `scrollAndCollect()` function collects usernames during scroll, not after
 
 ## Common Tasks
 

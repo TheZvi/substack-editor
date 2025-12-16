@@ -607,6 +607,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Twitter List Sync handlers
+    initializeTwitterListSync();
+
     // Before initializing API Key Management
     console.log("About to call initializeApiKeyManagement");
     initializeApiKeyManagement();
@@ -1011,7 +1014,7 @@ function initializeApiKeyManagement() {
 async function loadApiKeys() {
     console.log("Loading saved API keys");
     try {
-        const result = await chrome.storage.local.get(['claude-api-key', 'gemini-api-key', 'gemini-model']);
+        const result = await chrome.storage.local.get(['claude-api-key', 'gemini-api-key', 'gemini-model', 'twitter-username', 'twitter-list-id', 'twitter-source-list']);
 
         const claudeInput = document.getElementById('claude-api-key');
         if (claudeInput && result['claude-api-key']) {
@@ -1031,8 +1034,161 @@ async function loadApiKeys() {
             geminiModelInput.placeholder = 'gemini-2.5-flash';
             console.log("Gemini model loaded:", result['gemini-model'] || '(default)');
         }
+
+        // Load Twitter List Sync settings
+        const twitterUsernameInput = document.getElementById('twitter-username');
+        if (twitterUsernameInput && result['twitter-username']) {
+            twitterUsernameInput.value = result['twitter-username'];
+            console.log("Twitter username loaded");
+        }
+
+        const twitterSourceListInput = document.getElementById('twitter-source-list');
+        if (twitterSourceListInput && result['twitter-source-list']) {
+            twitterSourceListInput.value = result['twitter-source-list'];
+            console.log("Twitter source list loaded");
+        }
+
+        const twitterListIdInput = document.getElementById('twitter-list-id');
+        if (twitterListIdInput && result['twitter-list-id']) {
+            twitterListIdInput.value = result['twitter-list-id'];
+            console.log("Twitter list ID loaded");
+        }
     } catch (error) {
         console.error("Error loading API keys:", error);
         showApiStatus('Error loading API keys', true);
     }
+}
+
+// ============================================================================
+// Twitter List Sync
+// ============================================================================
+
+function showTwitterSyncStatus(message, type = 'info') {
+    const statusEl = document.getElementById('twitter-sync-status');
+    if (statusEl) {
+        statusEl.textContent = message;
+        statusEl.className = type;
+        statusEl.style.display = 'block';
+    }
+}
+
+function initializeTwitterListSync() {
+    console.log("Initializing Twitter List Sync");
+
+    // Save username button
+    const saveUsernameBtn = document.getElementById('save-twitter-username');
+    if (saveUsernameBtn) {
+        saveUsernameBtn.addEventListener('click', async () => {
+            const input = document.getElementById('twitter-username');
+            let username = input.value.trim();
+            // Remove @ if present
+            if (username.startsWith('@')) {
+                username = username.substring(1);
+            }
+            await chrome.storage.local.set({ 'twitter-username': username });
+            showTwitterSyncStatus('Username saved', 'success');
+        });
+    }
+
+    // Save source list ID button
+    const saveSourceListBtn = document.getElementById('save-source-list');
+    if (saveSourceListBtn) {
+        saveSourceListBtn.addEventListener('click', async () => {
+            const input = document.getElementById('twitter-source-list');
+            const listId = input.value.trim();
+            await chrome.storage.local.set({ 'twitter-source-list': listId });
+            showTwitterSyncStatus(listId ? 'Source list saved' : 'Source cleared (will use Following)', 'success');
+        });
+    }
+
+    // Save dest list ID button
+    const saveListBtn = document.getElementById('save-twitter-list');
+    if (saveListBtn) {
+        saveListBtn.addEventListener('click', async () => {
+            const input = document.getElementById('twitter-list-id');
+            const listId = input.value.trim();
+            await chrome.storage.local.set({ 'twitter-list-id': listId });
+            showTwitterSyncStatus('Destination list saved', 'success');
+        });
+    }
+
+    // Add Only button
+    const addOnlyBtn = document.getElementById('sync-add-only');
+    if (addOnlyBtn) {
+        addOnlyBtn.addEventListener('click', () => performTwitterSync('add'));
+    }
+
+    // Remove Only button
+    const removeOnlyBtn = document.getElementById('sync-remove-only');
+    if (removeOnlyBtn) {
+        removeOnlyBtn.addEventListener('click', () => performTwitterSync('remove'));
+    }
+
+    // Full Sync button
+    const fullSyncBtn = document.getElementById('sync-full');
+    if (fullSyncBtn) {
+        fullSyncBtn.addEventListener('click', () => performTwitterSync('full'));
+    }
+}
+
+async function performTwitterSync(mode) {
+    console.log(`Starting Twitter sync: ${mode}`);
+
+    // Get saved settings
+    const settings = await chrome.storage.local.get(['twitter-username', 'twitter-list-id', 'twitter-source-list']);
+    const username = settings['twitter-username'];
+    const destListId = settings['twitter-list-id'];
+    const sourceListId = settings['twitter-source-list'];
+
+    if (!username) {
+        showTwitterSyncStatus('Please enter your Twitter username first', 'error');
+        return;
+    }
+
+    if (!destListId) {
+        showTwitterSyncStatus('Please enter a destination List ID first', 'error');
+        return;
+    }
+
+    // Get current tab
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // If no source list, we need to be on the Following page
+    if (!sourceListId) {
+        const currentUrl = currentTab.url?.toLowerCase() || '';
+        const isFollowingPage = currentUrl.includes('x.com/') && currentUrl.includes('/following');
+
+        console.log('Current URL:', currentTab.url);
+        console.log('Is following page:', isFollowingPage);
+
+        if (!isFollowingPage) {
+            showTwitterSyncStatus(`Go to x.com/${username}/following first, then click sync`, 'error');
+            return;
+        }
+        showTwitterSyncStatus('Scraping following list...', 'info');
+    } else {
+        showTwitterSyncStatus(`Syncing from list ${sourceListId}...`, 'info');
+    }
+
+    // Send to background script (which stays alive when popup closes)
+    chrome.runtime.sendMessage({
+        action: 'twitter-list-sync',
+        username: username,
+        destListId: destListId,
+        sourceListId: sourceListId || null,
+        mode: mode,
+        tabId: currentTab.id
+    }, (result) => {
+        if (chrome.runtime.lastError) {
+            console.error('Sync message error:', chrome.runtime.lastError);
+            return;
+        }
+        console.log('Sync result:', result);
+
+        if (result?.success) {
+            showTwitterSyncStatus(`Done! Added: ${result.added}, Removed: ${result.removed}`, 'success');
+        } else {
+            showTwitterSyncStatus('Error: ' + (result?.error || 'Unknown'), 'error');
+        }
+    });
 }
