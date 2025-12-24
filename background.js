@@ -154,39 +154,33 @@ async function performTwitterListSync(username, destListId, sourceListId, mode, 
 
     // Step 1: Get source accounts (either from Following or from a source list)
     if (!sourceListId) {
-      // Source is Following - need to be on the following page
-      console.log('[Background] Step 1: Checking current tab for Following page...');
+      // Source is Following - open the following page
+      console.log(`[Background] Step 1: Opening Following page for @${username}...`);
+      const followingUrl = `https://x.com/${username}/following`;
+      const followingTab = await chrome.tabs.create({ url: followingUrl, active: true });
 
-      const tab = await chrome.tabs.get(currentTabId);
-      const currentUrl = tab.url?.toLowerCase() || '';
-      const isFollowingPage = currentUrl.includes('x.com/') && currentUrl.includes('/following');
+      await waitForTabComplete(followingTab.id);
+      await sleep(3000);
 
-      console.log('[Background] Current URL:', tab.url);
-      console.log('[Background] Is following page:', isFollowingPage);
-
-      if (!isFollowingPage) {
-        return {
-          success: false,
-          error: `Please navigate to x.com/${username}/following first`
-        };
-      }
-
-      // Scrape following from current page
+      // Scrape following from the page
       console.log('[Background] Step 2: Scraping Following list (auto-scrolling)...');
       await chrome.scripting.executeScript({
-        target: { tabId: currentTabId },
+        target: { tabId: followingTab.id },
         files: ['twitter/twitter-list-sync.js']
       });
 
-      await sleep(500);
+      await sleep(1000);
 
       const followingResult = await chrome.scripting.executeScript({
-        target: { tabId: currentTabId },
+        target: { tabId: followingTab.id },
         func: () => window.scrapeFollowingList()
       });
 
       sourceAccounts = followingResult?.[0]?.result?.usernames || [];
       console.log(`[Background] Found ${sourceAccounts.length} following`);
+
+      // Close following tab
+      await chrome.tabs.remove(followingTab.id);
 
     } else {
       // Source is another list - open it and scrape

@@ -11,6 +11,48 @@ function sleep(ms) {
 }
 
 /**
+ * Find the scrollable container and query scope - could be window or a modal
+ * Returns { scrollContainer, queryScope } where queryScope is the element to search within
+ */
+function findScrollContext() {
+    // Check for Twitter's modal/dialog container
+    const modal = document.querySelector('[aria-modal="true"]') ||
+                  document.querySelector('[role="dialog"]');
+
+    if (modal) {
+        console.log('[Twitter List Sync] Found modal, will scope queries to it');
+
+        // Find the scrollable element within the modal
+        let scrollContainer = null;
+        const candidates = modal.querySelectorAll('*');
+        for (const el of candidates) {
+            const style = window.getComputedStyle(el);
+            if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+                // Prefer larger scrollable areas
+                if (!scrollContainer || el.scrollHeight > scrollContainer.scrollHeight) {
+                    scrollContainer = el;
+                }
+            }
+        }
+
+        if (scrollContainer) {
+            console.log('[Twitter List Sync] Found scrollable container in modal:', scrollContainer.tagName);
+        }
+
+        return {
+            scrollContainer: scrollContainer,
+            queryScope: modal  // Scope queries to modal to avoid background content
+        };
+    }
+
+    console.log('[Twitter List Sync] No modal found, using window scroll and document scope');
+    return {
+        scrollContainer: null,  // Use window
+        queryScope: document    // Search whole document
+    };
+}
+
+/**
  * Scroll and collect usernames - Twitter virtualizes the list so we collect as we go
  */
 async function scrollAndCollect(maxScrolls = 300) {
@@ -19,13 +61,21 @@ async function scrollAndCollect(maxScrolls = 300) {
     let noNewUsersCount = 0;
     let previousCollectedCount = 0;
 
+    // Find the right scroll container and query scope (modal or window/document)
+    const { scrollContainer, queryScope } = findScrollContext();
+    const scrollHeight = scrollContainer ? scrollContainer.scrollHeight : document.body.scrollHeight;
+    const viewHeight = scrollContainer ? scrollContainer.clientHeight : window.innerHeight;
+
     console.log('[Twitter List Sync] Starting scroll and collect...');
-    console.log('[Twitter List Sync] Document height:', document.body.scrollHeight);
-    console.log('[Twitter List Sync] Window height:', window.innerHeight);
+    console.log('[Twitter List Sync] Scroll container:', scrollContainer ? 'modal/element' : 'window');
+    console.log('[Twitter List Sync] Query scope:', queryScope === document ? 'document' : 'modal');
+    console.log('[Twitter List Sync] Scroll height:', scrollHeight);
+    console.log('[Twitter List Sync] View height:', viewHeight);
 
     while (scrollCount < maxScrolls && noNewUsersCount < 10) {
         // Collect usernames from currently visible cells BEFORE scrolling
-        const userCells = document.querySelectorAll('[data-testid="UserCell"]');
+        // IMPORTANT: Query within the scope (modal or document) to avoid background content
+        const userCells = queryScope.querySelectorAll('[data-testid="UserCell"]');
         userCells.forEach(cell => {
             const spans = cell.querySelectorAll('span');
             for (const span of spans) {
@@ -40,8 +90,12 @@ async function scrollAndCollect(maxScrolls = 300) {
             }
         });
 
-        // Scroll down
-        window.scrollBy(0, window.innerHeight * 2);
+        // Scroll down - use container or window
+        if (scrollContainer) {
+            scrollContainer.scrollTop += viewHeight * 2;
+        } else {
+            window.scrollBy(0, viewHeight * 2);
+        }
         scrollCount++;
 
         // Wait for content to load
@@ -56,14 +110,15 @@ async function scrollAndCollect(maxScrolls = 300) {
 
         // Log progress
         if (scrollCount % 5 === 0 || collectedUsernames.size !== previousCollectedCount) {
-            console.log(`[Twitter List Sync] Scroll ${scrollCount}: ${collectedUsernames.size} total collected, ${userCells.length} cells visible, scrollY: ${window.scrollY}, docHeight: ${document.body.scrollHeight}`);
+            const currentScroll = scrollContainer ? scrollContainer.scrollTop : window.scrollY;
+            console.log(`[Twitter List Sync] Scroll ${scrollCount}: ${collectedUsernames.size} total collected, ${userCells.length} cells visible, scrollPos: ${currentScroll}`);
         }
 
         previousCollectedCount = collectedUsernames.size;
     }
 
-    // One final collection after last scroll
-    const finalCells = document.querySelectorAll('[data-testid="UserCell"]');
+    // One final collection after last scroll (also scoped)
+    const finalCells = queryScope.querySelectorAll('[data-testid="UserCell"]');
     finalCells.forEach(cell => {
         const spans = cell.querySelectorAll('span');
         for (const span of spans) {
@@ -118,8 +173,13 @@ window.scrapeFollowingList = async function() {
 window.scrapeListMembers = async function() {
     console.log("[Twitter List Sync] Starting to scrape List members...");
 
-    // Scroll to top first
-    window.scrollTo(0, 0);
+    // Scroll to top first - check for modal container
+    const { scrollContainer } = findScrollContext();
+    if (scrollContainer) {
+        scrollContainer.scrollTop = 0;
+    } else {
+        window.scrollTo(0, 0);
+    }
     await sleep(1000);
 
     // Scroll and collect

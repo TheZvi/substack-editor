@@ -2,11 +2,13 @@
 <html>
 <head>
   <style>
-    body { 
-      width: 250px; 
-      padding: 10px; 
+    body {
+      width: 250px;
+      padding: 10px;
+      max-height: 500px;
+      overflow-y: auto;
     }
-    button { 
+    button {
       width: 100%;
       margin: 5px 0;
       padding: 8px;
@@ -15,9 +17,12 @@
       border-radius: 4px;
     }
     #status {
-      margin-top: 10px;
-      padding: 5px;
+      margin-bottom: 10px;
+      padding: 8px;
       display: none;
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
     #status.success {
       background-color: #e6ffe6;
@@ -129,6 +134,7 @@
   </style>
 </head>
 <body>
+  <div id="status"></div>
   <button id="generate-toc">Generate/Update TOC</button>
   <button id="remove-blanks">Remove Blank Sections</button>
   <button id="post-wordpress">Post to WordPress</button>
@@ -160,13 +166,12 @@
       <button id="sync-full" title="Make list exactly match your following">Full Sync</button>
     </div>
     <div style="font-size: 11px; color: #666; margin-top: 4px;">
-      Source empty = sync from Following (must be on /following page)<br>
+      Source empty = sync from your Following<br>
       Source filled = sync from that list (can be anyone's public list)
     </div>
     <div id="twitter-sync-status"></div>
   </div>
 
-  <div id="status"></div>
   <div id="removal-log"></div>
   <div id="linkify-log"></div>
   <div id="api-key-section" class="section">

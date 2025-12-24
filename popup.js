@@ -125,6 +125,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const result = results?.[0]?.result;
                 if (result?.success) {
+                    // Scroll to top of page
+                    await chrome.scripting.executeScript({
+                        target: {tabId: tab.id},
+                        func: () => window.scrollTo(0, 0)
+                    });
                     showStatus('TOC successfully updated');
                 } else {
                     showStatus(result?.error || 'Error generating TOC', true);
@@ -158,7 +163,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         func: generateTOC,
                         args: [tab.url]
                     });
-                    
+
+                    // Scroll to top of page
+                    await chrome.scripting.executeScript({
+                        target: {tabId: tab.id},
+                        func: () => window.scrollTo(0, 0)
+                    });
+
                     showStatus(`Removed ${removedSections.length} blank sections`);
                     showRemovalLog(removedSections);
                 } else {
@@ -1043,15 +1054,15 @@ async function loadApiKeys() {
         }
 
         const twitterSourceListInput = document.getElementById('twitter-source-list');
-        if (twitterSourceListInput && result['twitter-source-list']) {
-            twitterSourceListInput.value = result['twitter-source-list'];
-            console.log("Twitter source list loaded");
+        if (twitterSourceListInput) {
+            twitterSourceListInput.value = result['twitter-source-list'] || '';
+            console.log("Twitter source list loaded:", result['twitter-source-list'] || '(empty)');
         }
 
         const twitterListIdInput = document.getElementById('twitter-list-id');
-        if (twitterListIdInput && result['twitter-list-id']) {
-            twitterListIdInput.value = result['twitter-list-id'];
-            console.log("Twitter list ID loaded");
+        if (twitterListIdInput) {
+            twitterListIdInput.value = result['twitter-list-id'] || '';
+            console.log("Twitter dest list ID loaded:", result['twitter-list-id'] || '(empty)');
         }
     } catch (error) {
         console.error("Error loading API keys:", error);
@@ -1153,19 +1164,9 @@ async function performTwitterSync(mode) {
     // Get current tab
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    // If no source list, we need to be on the Following page
+    // Show status based on source
     if (!sourceListId) {
-        const currentUrl = currentTab.url?.toLowerCase() || '';
-        const isFollowingPage = currentUrl.includes('x.com/') && currentUrl.includes('/following');
-
-        console.log('Current URL:', currentTab.url);
-        console.log('Is following page:', isFollowingPage);
-
-        if (!isFollowingPage) {
-            showTwitterSyncStatus(`Go to x.com/${username}/following first, then click sync`, 'error');
-            return;
-        }
-        showTwitterSyncStatus('Scraping following list...', 'info');
+        showTwitterSyncStatus('Opening Following page and syncing...', 'info');
     } else {
         showTwitterSyncStatus(`Syncing from list ${sourceListId}...`, 'info');
     }

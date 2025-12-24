@@ -54,9 +54,8 @@ Sync your Following list to a Twitter List, or transfer members between lists. U
    - **Username**: Your Twitter username (without @)
    - **Source List**: Leave empty to sync from Following, or enter a List ID to sync from another list
    - **Dest List**: The List ID you want to sync TO (find in URL: `x.com/i/lists/LISTID`)
-3. If syncing from Following, navigate to `x.com/yourusername/following` first
-4. Click Add Only, Remove Only, or Full Sync
-5. Watch progress in the browser console (the extension will auto-scroll and collect accounts)
+3. Click Add Only, Remove Only, or Full Sync
+4. The extension will automatically open the necessary pages and collect accounts
 
 **Note**: Large syncs (200+ accounts) take ~15-20 minutes due to Twitter rate limits. The DOM scraping may pick up a small number of false positives (~2-3%) due to UI proximity detection.
 
