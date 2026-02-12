@@ -49,6 +49,46 @@ chrome.commands.onCommand.addListener((command, tab) => {
           console.log("Transform message sent successfully:", response);
       });
   }
+});
+
+// ============================================================================
+// SPA Navigation Detection - Inject content scripts on client-side navigation
+// ============================================================================
+
+// Track which tabs have had content scripts injected to avoid duplicates
+const injectedTabs = new Set();
+
+// Listen for SPA-style navigation (history state changes without full page reload)
+chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
+  // Only care about main frame navigation
+  if (details.frameId !== 0) return;
+
+  const url = details.url;
+
+  // Check if this is a Substack editor page
+  if (url.match(/https:\/\/[^/]+\.substack\.com\/publish\/post\//)) {
+    console.log('[Background] SPA navigation to Substack editor:', url);
+
+    // Check if content script is already running by sending a ping
+    try {
+      await chrome.tabs.sendMessage(details.tabId, { action: 'ping' });
+      console.log('[Background] Content script already running');
+    } catch (e) {
+      // Content script not running, inject it
+      console.log('[Background] Injecting content script for SPA navigation');
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: details.tabId },
+          files: ['content.js']
+        });
+        console.log('[Background] Content script injected successfully');
+      } catch (err) {
+        console.error('[Background] Failed to inject content script:', err);
+      }
+    }
+  }
+}, {
+  url: [{ hostSuffix: '.substack.com' }]
 }); 
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -67,15 +107,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetch-image') {
     (async () => {
       try {
-        console.log('[Background] Fetching image:', request.url.substring(0, 80));
-        const response = await fetch(request.url);
+        console.log('[Background] Fetching image:', request.url.substring(0, 100));
+
+        // Determine if this is a Twitter image
+        const isTwitterImage = request.url.includes('pbs.twimg.com') || request.url.includes('twimg.com');
+
+        // Build fetch options - include credentials for Twitter to use session cookies
+        const fetchOptions = {
+          method: 'GET',
+          credentials: isTwitterImage ? 'include' : 'omit',
+          headers: {}
+        };
+
+        // Add referrer for Twitter images
+        if (isTwitterImage) {
+          fetchOptions.referrer = 'https://x.com/';
+          fetchOptions.referrerPolicy = 'strict-origin-when-cross-origin';
+        }
+
+        const response = await fetch(request.url, fetchOptions);
 
         if (!response.ok) {
+          console.error('[Background] Image fetch failed:', response.status, response.statusText);
           sendResponse({ success: false, error: `HTTP ${response.status}` });
           return;
         }
 
         const blob = await response.blob();
+        console.log('[Background] Image blob received, size:', Math.round(blob.size / 1024), 'KB, type:', blob.type);
 
         // Convert to base64
         const reader = new FileReader();
@@ -284,4 +343,260 @@ function waitForTabComplete(tabId) {
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============================================================================
+// Twitter Pro - Open Tweet in Tab Group
+// ============================================================================
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'open-tweet-in-group') {
+    openUrlInTabGroup(request.tweetUrl, request.tabGroupName, sender.tab?.windowId)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async
+  }
+  if (request.action === 'open-url-in-group') {
+    openUrlInTabGroup(request.url, request.tabGroupName, request.windowId, request.active)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async
+  }
+  if (request.action === 'open-author-annotations') {
+    const url = chrome.runtime.getURL('author-annotations/ui/manage-annotations.html');
+    chrome.tabs.create({ url, active: true });
+  }
+  if (request.action === 'get-last-closed-tab-url') {
+    chrome.sessions.getRecentlyClosed({ maxResults: 10 }, (sessions) => {
+      // Find the first closed tab (not window)
+      for (const session of sessions) {
+        if (session.tab && session.tab.url) {
+          sendResponse({ success: true, url: session.tab.url, title: session.tab.title });
+          return;
+        }
+      }
+      sendResponse({ success: false, error: 'No recently closed tabs found' });
+    });
+    return true; // Keep channel open for async
+  }
+});
+
+// ============================================================================
+// Google Docs Comment API
+// ============================================================================
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'create-googledoc-comment') {
+    createGoogleDocComment(request.documentId, request.commentText)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async
+  }
+  if (request.action === 'read-googledoc') {
+    readGoogleDocContent(request.documentId)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async
+  }
+});
+
+/**
+ * Get Google OAuth token from storage (cached from popup auth)
+ */
+async function getGoogleToken() {
+  const cached = await chrome.storage.local.get([
+    'google-access-token',
+    'google-token-expiry'
+  ]);
+
+  if (cached['google-access-token'] && cached['google-token-expiry']) {
+    if (Date.now() < cached['google-token-expiry']) {
+      return cached['google-access-token'];
+    }
+  }
+
+  throw new Error('No valid Google token. Please use the extension popup to authenticate with Google first.');
+}
+
+/**
+ * Create an unanchored comment on a Google Doc via Drive API
+ * @param {string} documentId - The Google Doc ID
+ * @param {string} commentText - The comment content (should include quoted text for Ctrl+F)
+ */
+async function createGoogleDocComment(documentId, commentText) {
+  console.log('[Background] Creating Google Doc comment on:', documentId);
+
+  const token = await getGoogleToken();
+
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${documentId}/comments?fields=*`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      content: commentText
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('[Background] Comment creation failed:', response.status, error);
+    throw new Error(`Failed to create comment: ${response.status} - ${error}`);
+  }
+
+  const comment = await response.json();
+  console.log('[Background] Created comment:', comment.id);
+
+  return { success: true, commentId: comment.id };
+}
+
+// ============================================================================
+// Tab Group Helper
+// ============================================================================
+
+async function openUrlInTabGroup(url, tabGroupName, originalWindowId, active = false) {
+  try {
+    console.log(`[Background] Opening URL in tab group "${tabGroupName}":`, url);
+
+    // Get the configured tab group name from storage, or use the provided one
+    const settings = await chrome.storage.local.get('twitter-tab-group-name');
+    const groupName = settings['twitter-tab-group-name'] || tabGroupName || 'AI Links';
+
+    // Search ALL windows for an existing tab group with this name
+    const allGroups = await chrome.tabGroups.query({});
+    let targetGroup = allGroups.find(g => g.title === groupName);
+
+    let targetWindowId = originalWindowId;
+
+    if (targetGroup) {
+      // Found existing group - use its window
+      targetWindowId = targetGroup.windowId;
+      console.log(`[Background] Found existing "${groupName}" group in window ${targetWindowId}`);
+    }
+
+    // Create the new tab in the target window
+    const createOptions = {
+      url: url,
+      active: active
+    };
+    if (targetWindowId) {
+      createOptions.windowId = targetWindowId;
+    }
+    const newTab = await chrome.tabs.create(createOptions);
+
+    if (targetGroup) {
+      // Add tab to existing group
+      await chrome.tabs.group({ tabIds: newTab.id, groupId: targetGroup.id });
+    } else {
+      // Create new group with this tab
+      const groupId = await chrome.tabs.group({ tabIds: newTab.id });
+      await chrome.tabGroups.update(groupId, { title: groupName, color: 'blue' });
+    }
+
+    console.log(`[Background] URL opened in group "${groupName}"`);
+    return { success: true, tabId: newTab.id };
+
+  } catch (error) {
+    console.error('[Background] Error opening URL in tab group:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// ============================================================================
+// Universal Quote Copy - LLM Author Detection
+// ============================================================================
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'detect-author-llm') {
+    detectAuthorWithLLM(request.context)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async
+  }
+});
+
+/**
+ * Use LLM to detect author from page context
+ * @param {Object} context - Contains selectedText, surroundingHtml, pageTitle, pageUrl
+ */
+async function detectAuthorWithLLM(context) {
+  console.log('[Background] Detecting author with LLM for:', context.pageTitle);
+
+  // Get API key from storage
+  const stored = await chrome.storage.local.get('gemini-api-key');
+  const apiKey = stored['gemini-api-key'];
+
+  if (!apiKey) {
+    console.log('[Background] No Gemini API key configured');
+    return { success: false, error: 'No API key configured' };
+  }
+
+  // Get configured model or use default
+  const modelStored = await chrome.storage.local.get('gemini-model');
+  const model = modelStored['gemini-model'] || 'gemini-2.0-flash-lite';
+
+  // Build a focused prompt
+  const prompt = `Analyze this web page content and determine who wrote or said the selected text.
+
+Page title: ${context.pageTitle}
+Page URL: ${context.pageUrl}
+
+Selected text (excerpt): "${context.selectedText}"
+
+Surrounding HTML context:
+${context.surroundingHtml}
+
+Instructions:
+1. Identify the author or speaker of the selected text
+2. If it's a quote from someone, identify who is being quoted
+3. If it's article content, identify the article author
+4. If it's a comment, identify the commenter
+5. Return ONLY the author/speaker name, nothing else
+6. If you cannot determine the author, return "Unknown"
+
+Author name:`;
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 50,
+            temperature: 0.1
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Background] Gemini API error:', response.status, errorText);
+      return { success: false, error: `API error: ${response.status}` };
+    }
+
+    const data = await response.json();
+    const authorText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    if (!authorText || authorText.toLowerCase() === 'unknown') {
+      return { success: false, error: 'Could not determine author' };
+    }
+
+    // Clean up the response
+    const author = authorText
+      .replace(/^["']|["']$/g, '') // Remove quotes
+      .replace(/^Author:\s*/i, '') // Remove prefix if LLM added it
+      .trim();
+
+    console.log('[Background] LLM detected author:', author);
+    return { success: true, author: author };
+
+  } catch (error) {
+    console.error('[Background] LLM author detection failed:', error);
+    return { success: false, error: error.message };
+  }
 }

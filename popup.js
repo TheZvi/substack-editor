@@ -2,27 +2,40 @@
 // Status and Logging Utilities
 // ============================================================================
 
+// Track the current status timeout so we can cancel it when showing new status
+let currentStatusTimeout = null;
+
 /**
  * Shows a status message in the main status div
  * @param {string} message - The message to display
  * @param {boolean} isError - Whether this is an error message
- * @param {number} duration - How long to show the message (ms), default 3000
+ * @param {number} duration - How long to show the message (ms), default 3000 (errors: 30000)
  */
-function showStatus(message, isError = false, duration = 3000) {
+function showStatus(message, isError = false, duration = null) {
     console.log(`Status: ${message}${isError ? ' (ERROR)' : ''}`);
     const status = document.getElementById('status');
     if (!status) {
         console.error('Status element not found!');
         return;
     }
-    
+
+    // Cancel any existing timeout so new messages aren't hidden prematurely
+    if (currentStatusTimeout) {
+        clearTimeout(currentStatusTimeout);
+        currentStatusTimeout = null;
+    }
+
+    // Use 30 seconds for errors, 3 seconds for success (unless overridden)
+    const actualDuration = duration !== null ? duration : (isError ? 30000 : 3000);
+
     status.textContent = message;
     status.style.display = 'block';
     status.className = isError ? 'error' : 'success';
-    
-    setTimeout(() => {
+
+    currentStatusTimeout = setTimeout(() => {
         status.style.display = 'none';
-    }, duration);
+        currentStatusTimeout = null;
+    }, actualDuration);
 }
 
 /**
@@ -95,12 +108,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize button references
     const buttons = {
+        postWorkup: document.getElementById('post-workup'),
         generateToc: document.getElementById('generate-toc'),
         removeBlanks: document.getElementById('remove-blanks'),
         wordpress: document.getElementById('post-wordpress'),
         twitter: document.getElementById('post-twitter'),
+        copyToGoogleDoc: document.getElementById('copy-to-googledoc'),
+        reviewGoogleDoc: document.getElementById('review-googledoc'),
         linkify: document.getElementById('linkify'),
         manageLinkifyRules: document.getElementById('manage-linkify-rules'),
+        manageAuthorAnnotations: document.getElementById('manage-author-annotations'),
         cleanLinkSources: document.getElementById('clean-link-sources')
     };
 
@@ -110,6 +127,86 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error(`Button not found: ${name}`);
         }
     });
+
+    // Post Workup Button Handler - runs Linkify, Clean Link Sources, and Remove Blank Sections
+    if (buttons.postWorkup) {
+        buttons.postWorkup.addEventListener('click', async () => {
+            console.log("Post Workup button clicked");
+            try {
+                const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+                let results = { linkified: 0, cleaned: 0, sections: 0, whitespace: 0 };
+
+                // Step 1: Linkify Content
+                showStatus('Running linkify...');
+                await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    files: ['linkify/linkify-controller.js']
+                });
+                const linkifyResult = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: () => window.linkifyContent()
+                });
+                results.linkified = linkifyResult?.[0]?.result?.results?.length || 0;
+                console.log("Linkify done:", results.linkified);
+
+                // Step 2: Clean Link Sources
+                showStatus('Cleaning link sources...');
+                const cleanResult = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: cleanLinkSources
+                });
+                results.cleaned = cleanResult?.[0]?.result?.count || 0;
+                console.log("Clean done:", results.cleaned);
+
+                // Step 3: Remove Blank Sections
+                showStatus('Removing blank sections...');
+                const removeResult = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: removeBlanks
+                });
+                results.sections = removeResult?.[0]?.result?.removedSections?.length || 0;
+                results.whitespace = removeResult?.[0]?.result?.trailingWhitespaceRemoved || 0;
+                console.log("Remove blanks done:", results.sections, results.whitespace);
+
+                // Build summary message for steps 1-3
+                let parts = [];
+                if (results.linkified > 0) parts.push(`${results.linkified} link${results.linkified > 1 ? 's' : ''} added`);
+                if (results.cleaned > 0) parts.push(`${results.cleaned} link${results.cleaned > 1 ? 's' : ''} cleaned`);
+                if (results.sections > 0) parts.push(`${results.sections} blank section${results.sections > 1 ? 's' : ''} removed`);
+                if (results.whitespace > 0) parts.push(`${results.whitespace} empty paragraph${results.whitespace > 1 ? 's' : ''} removed`);
+
+                if (parts.length > 0) {
+                    showStatus(`Post workup: ${parts.join(', ')}`);
+                }
+
+                // Step 4: Generate TOC (must happen BEFORE Google Doc copy)
+                showStatus('Generating Table of Contents...');
+                await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: generateTOC,
+                    args: [tab.url]
+                });
+                console.log("TOC generated");
+
+                // Brief delay to ensure DOM is fully updated with TOC
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Scroll to top
+                await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: () => window.scrollTo(0, 0)
+                });
+
+                // Step 5: Copy to Google Doc (after TOC is created)
+                showStatus('Copying to Google Doc...');
+                await copyToGoogleDoc(showStatus);
+
+            } catch (error) {
+                console.error("Post workup error:", error);
+                showStatus('Error: ' + error.message, true);
+            }
+        });
+    }
 
     // Generate TOC Button Handler
     if (buttons.generateToc) {
@@ -153,10 +250,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     func: removeBlanks
                 });
                 
-                const removedSections = results?.[0]?.result?.removedSections;
-                console.log("Removed sections:", removedSections);
-                
-                if (removedSections && removedSections.length > 0) {
+                const removedSections = results?.[0]?.result?.removedSections || [];
+                const trailingWhitespaceRemoved = results?.[0]?.result?.trailingWhitespaceRemoved || 0;
+                console.log("Removed sections:", removedSections, "Trailing whitespace:", trailingWhitespaceRemoved);
+
+                if (removedSections.length > 0 || trailingWhitespaceRemoved > 0) {
                     // Update TOC after removing sections
                     await chrome.scripting.executeScript({
                         target: {tabId: tab.id},
@@ -170,10 +268,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         func: () => window.scrollTo(0, 0)
                     });
 
-                    showStatus(`Removed ${removedSections.length} blank sections`);
+                    // Build status message
+                    let statusParts = [];
+                    if (removedSections.length > 0) {
+                        statusParts.push(`${removedSections.length} blank section${removedSections.length > 1 ? 's' : ''}`);
+                    }
+                    if (trailingWhitespaceRemoved > 0) {
+                        statusParts.push(`${trailingWhitespaceRemoved} empty paragraph${trailingWhitespaceRemoved > 1 ? 's' : ''}`);
+                    }
+                    showStatus(`Removed ${statusParts.join(' and ')}`);
                     showRemovalLog(removedSections);
                 } else {
-                    showStatus('No blank sections found');
+                    showStatus('No blank sections or trailing whitespace found');
                 }
             } catch (error) {
                 console.error("Remove blanks error:", error);
@@ -533,6 +639,72 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Copy to Google Doc Button Handler
+    if (buttons.copyToGoogleDoc) {
+        buttons.copyToGoogleDoc.addEventListener('click', async () => {
+            console.log("Copy to Google Doc button clicked");
+            await copyToGoogleDoc(showStatus);
+        });
+    }
+
+    // Review Google Doc Button Handler
+    if (buttons.reviewGoogleDoc) {
+        console.log("[Popup] Review Google Doc button found, adding handler");
+        buttons.reviewGoogleDoc.addEventListener('click', async () => {
+            console.log("[Popup] Review Google Doc button clicked");
+            try {
+                const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+                console.log("[Popup] Current tab:", tab?.url);
+
+                // Check if we're on a Google Doc
+                if (!tab.url || !tab.url.includes('docs.google.com/document/')) {
+                    console.log("[Popup] Not on a Google Doc");
+                    showStatus('Please open a Google Doc first', true);
+                    return;
+                }
+
+                // Check if GoogleDocsReview is loaded
+                console.log("[Popup] Checking GoogleDocsReview:", typeof window.GoogleDocsReview);
+                if (!window.GoogleDocsReview) {
+                    console.error("[Popup] GoogleDocsReview not loaded!");
+                    showStatus('Error: Review module not loaded. Reload extension.', true);
+                    return;
+                }
+
+                // Extract document ID from URL
+                const docId = window.GoogleDocsReview.extractDocId(tab.url);
+                console.log("[Popup] Extracted doc ID:", docId);
+                if (!docId) {
+                    showStatus('Could not extract document ID from URL', true);
+                    return;
+                }
+
+                console.log("[Popup] Reviewing document:", docId);
+                showStatus('Starting AI review...');
+
+                // Perform the review
+                console.log("[Popup] Calling GoogleDocsReview.review...");
+                const result = await window.GoogleDocsReview.review(docId, showStatus);
+                console.log("[Popup] Review result:", result);
+
+                if (result && result.success) {
+                    showStatus(result.message, false, 10000);
+                } else if (result) {
+                    showStatus('Error: ' + (result.error || 'Unknown error'), true);
+                } else {
+                    showStatus('Error: No result returned from review', true);
+                }
+
+            } catch (error) {
+                console.error("[Popup] Review Google Doc error:", error);
+                console.error("[Popup] Error stack:", error.stack);
+                showStatus('Error: ' + (error.message || 'Unknown error'), true);
+            }
+        });
+    } else {
+        console.error("[Popup] Review Google Doc button NOT found!");
+    }
+
     // Linkify Button Handler
     if (buttons.linkify) {
         buttons.linkify.addEventListener('click', async () => {
@@ -587,6 +759,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Manage Author Annotations Button Handler
+    if (buttons.manageAuthorAnnotations) {
+        buttons.manageAuthorAnnotations.addEventListener('click', () => {
+            const url = chrome.runtime.getURL('author-annotations/ui/manage-annotations.html');
+            chrome.tabs.create({ url });
+        });
+    }
+
     // Clean Link Sources Button Handler
     if (buttons.cleanLinkSources) {
         buttons.cleanLinkSources.addEventListener('click', async () => {
@@ -630,6 +810,124 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/**
+ * Copies Substack content to a new Google Doc
+ * @param {Function} showStatus - Status display function
+ */
+async function copyToGoogleDoc(showStatus) {
+    try {
+        const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+
+        showStatus('Extracting content...');
+
+        // Extract title and content from Substack editor
+        const extractResult = await chrome.scripting.executeScript({
+            target: {tabId: tab.id},
+            func: () => {
+                try {
+                    // Get title from <title> element
+                    // Format is: Editing "TITLE" - Substack
+                    const titleElement = document.querySelector('title');
+                    let title = '';
+                    if (titleElement) {
+                        const rawTitle = titleElement.textContent;
+                        const match = rawTitle.match(/^Editing "(.+)" - Substack$/);
+                        if (match) {
+                            title = match[1];
+                        } else {
+                            title = rawTitle.replace(" - Substack", "").trim();
+                        }
+                    }
+
+                    // Get editor content
+                    const editor = document.querySelector('div[contenteditable="true"][data-testid="editor"]') ||
+                                  document.querySelector('.ProseMirror') ||
+                                  document.querySelector('[contenteditable="true"]');
+
+                    if (!editor) {
+                        return { success: false, error: "Could not find editor" };
+                    }
+
+                    return {
+                        success: true,
+                        title: title,
+                        html: editor.innerHTML,
+                        text: editor.innerText
+                    };
+                } catch (e) {
+                    return { success: false, error: e.message };
+                }
+            }
+        });
+
+        const content = extractResult?.[0]?.result;
+        if (!content?.success) {
+            showStatus(content?.error || 'Error extracting content', true);
+            return { success: false };
+        }
+
+        console.log("[Google Doc] Title:", content.title);
+        console.log("[Google Doc] Content length:", content.html?.length);
+
+        showStatus('Creating Google Doc...');
+
+        // Use Google Docs API to create document with title and content
+        try {
+            const result = await window.GoogleDocsAPI.createDocWithContent(
+                content.title || 'Untitled',
+                content.html
+            );
+
+            console.log("[Google Doc] Created:", result.url);
+
+            // Open the new document in the AI Links tab group
+            await chrome.runtime.sendMessage({
+                action: 'open-url-in-group',
+                url: result.url,
+                tabGroupName: 'AI Links',
+                active: true
+            });
+
+            showStatus(`Created: ${content.title || 'Untitled'}`);
+            return { success: true, title: content.title, url: result.url };
+
+        } catch (apiError) {
+            console.error("[Google Doc] API Error:", apiError);
+
+            // If API fails, fall back to clipboard method
+            if (apiError.message.includes('not granted') || apiError.message.includes('OAuth')) {
+                showStatus('Please authorize Google Docs access...', true);
+                // Try again with interactive auth
+                try {
+                    const result = await window.GoogleDocsAPI.createDocWithContent(
+                        content.title || 'Untitled',
+                        content.html
+                    );
+                    await chrome.runtime.sendMessage({
+                        action: 'open-url-in-group',
+                        url: result.url,
+                        tabGroupName: 'AI Links',
+                        active: true
+                    });
+                    showStatus(`Created: ${content.title || 'Untitled'}`);
+                    return { success: true, title: content.title, url: result.url };
+                } catch (retryError) {
+                    showStatus('Auth failed: ' + retryError.message, true);
+                    return { success: false, error: retryError.message };
+                }
+            }
+
+            showStatus('API Error: ' + apiError.message, true);
+            return { success: false, error: apiError.message };
+        }
+
+    } catch (error) {
+        console.error("Copy to Google Doc error:", error);
+        showStatus('Error: ' + error.message, true);
+        return { success: false, error: error.message };
+    }
+}
 
 /**
  * Strips query parameters from all links in the Substack editor
@@ -824,36 +1122,37 @@ function generateTOC(postUrl) {
 }
 
 /**
- * Removes blank sections from the document
+ * Removes blank sections and trailing whitespace from the document
  * @returns {Object} Object containing array of removed section titles
  */
 function removeBlanks() {
     try {
         console.log("Starting removeBlanks");
         const removedSections = [];
-        
+        let trailingWhitespaceRemoved = 0;
+
         // Get and filter headers
         const headers = document.querySelectorAll('h1, h2, h3, h4');
         console.log("Found headers:", headers.length);
-        
+
         const interfaceTitles = [
             "Preview post", "Post info", "Post settings", "Publish", "Heads up!",
             "Search images", "Generate image", "Secret draft link", "Send test email",
             "Heads up!", "Preview post"
         ];
-        
+
         let headersArray = Array.from(headers)
-            .filter(header => header.textContent.trim() !== "" && 
+            .filter(header => header.textContent.trim() !== "" &&
                     !interfaceTitles.includes(header.textContent.trim()));
-                    
+
         console.log("Filtered headers:", headersArray.length);
-    
+
         // Check each section for content
         headersArray.forEach(header => {
             console.log("Checking header:", header.textContent);
             let isEmpty = true;
             let nextSibling = header.nextElementSibling;
-            
+
             while (nextSibling && !['H1', 'H2', 'H3', 'H4'].includes(nextSibling.tagName)) {
                 if (nextSibling.textContent.trim() !== "") {
                     isEmpty = false;
@@ -861,7 +1160,7 @@ function removeBlanks() {
                 }
                 nextSibling = nextSibling.nextElementSibling;
             }
-    
+
             // Remove empty sections
             if (isEmpty) {
                 console.log("Found empty section:", header.textContent);
@@ -875,176 +1174,94 @@ function removeBlanks() {
                 }
             }
         });
-    
-        console.log("Removed sections:", removedSections);
-        return { removedSections };
-        
+
+        // Remove trailing whitespace at end of sections (empty paragraphs before headers)
+        const allHeaders = document.querySelectorAll('h1, h2, h3, h4');
+        allHeaders.forEach(header => {
+            // Look backwards from each header and remove empty elements
+            let prevSibling = header.previousElementSibling;
+            while (prevSibling && prevSibling.textContent.trim() === '' &&
+                   !['H1', 'H2', 'H3', 'H4'].includes(prevSibling.tagName)) {
+                console.log("Removing trailing whitespace before:", header.textContent?.substring(0, 30));
+                let toRemove = prevSibling;
+                prevSibling = prevSibling.previousElementSibling;
+                toRemove.remove();
+                trailingWhitespaceRemoved++;
+            }
+        });
+
+        // Remove trailing whitespace at end of document (in ProseMirror editor)
+        const editor = document.querySelector('.ProseMirror');
+        if (editor) {
+            let lastChild = editor.lastElementChild;
+            while (lastChild && lastChild.textContent.trim() === '' &&
+                   !['H1', 'H2', 'H3', 'H4'].includes(lastChild.tagName)) {
+                console.log("Removing trailing whitespace at end of document");
+                let toRemove = lastChild;
+                lastChild = lastChild.previousElementSibling;
+                toRemove.remove();
+                trailingWhitespaceRemoved++;
+            }
+        }
+
+        console.log("Removed sections:", removedSections.length, "Trailing whitespace:", trailingWhitespaceRemoved);
+        return { removedSections, trailingWhitespaceRemoved };
+
     } catch (e) {
         console.error("Error in removeBlanks:", e);
-        return { removedSections: [] };
+        return { removedSections: [], trailingWhitespaceRemoved: 0 };
     }
 }
 
 // ============================================================================
-// API Key Management
+// Settings Management
 // ============================================================================
 
 function initializeApiKeyManagement() {
     console.log("Inside initializeApiKeyManagement");
-    console.log("Looking for elements:", {
-        claudeKey: !!document.getElementById('claude-api-key'),
-        geminiKey: !!document.getElementById('gemini-api-key'),
-        testButton: !!document.getElementById('test-gemini-key')
-    });
 
-    // Claude API Key Management
-    const claudeElements = {
-        input: document.getElementById('claude-api-key'),
-        saveButton: document.getElementById('save-api-key'),
-        showButton: document.getElementById('show-key')
-    };
-
-    // Gemini API Key Management
-    const geminiElements = {
-        input: document.getElementById('gemini-api-key'),
-        saveButton: document.getElementById('save-gemini-key'),
-        showButton: document.getElementById('show-gemini-key'),
-        testButton: document.getElementById('test-gemini-key'),
-        modelInput: document.getElementById('gemini-model'),
-        saveModelButton: document.getElementById('save-gemini-model')
-    };
-
-    // Verify all elements exist
-    ['Claude', 'Gemini'].forEach(api => {
-        const elements = api === 'Claude' ? claudeElements : geminiElements;
-        Object.entries(elements).forEach(([name, element]) => {
-            if (!element) {
-                console.error(`${api} ${name} element not found!`);
-            }
-        });
-    });
-
-    // Load existing API keys
+    // Load existing settings
     loadApiKeys();
 
-    // Claude API Event Listeners
-    if (claudeElements.saveButton) {
-        claudeElements.saveButton.addEventListener('click', async () => {
-            console.log("Saving Claude API key");
+    // Open Options button handler
+    const openOptionsBtn = document.getElementById('open-options');
+    if (openOptionsBtn) {
+        openOptionsBtn.addEventListener('click', () => {
+            chrome.runtime.openOptionsPage();
+        });
+    }
+
+    // Google Client Secret handlers
+    const googleSecretInput = document.getElementById('google-client-secret');
+    const saveGoogleSecretBtn = document.getElementById('save-google-secret');
+    const showGoogleSecretBtn = document.getElementById('show-google-secret');
+
+    if (saveGoogleSecretBtn && googleSecretInput) {
+        saveGoogleSecretBtn.addEventListener('click', async () => {
+            console.log("Saving Google client secret");
             try {
-                const key = claudeElements.input.value.trim();
-                await chrome.storage.local.set({ 'claude-api-key': key });
-                showApiStatus('Claude API key saved successfully');
+                const secret = googleSecretInput.value.trim();
+                await chrome.storage.local.set({ 'google-client-secret': secret });
+                showApiStatus('Google client secret saved');
             } catch (error) {
-                console.error("Error saving Claude API key:", error);
-                showApiStatus('Error saving Claude API key', true);
+                console.error("Error saving Google secret:", error);
+                showApiStatus('Error saving Google secret', true);
             }
         });
     }
 
-    if (claudeElements.showButton) {
-        claudeElements.showButton.addEventListener('click', () => {
-            console.log("Toggling Claude API key visibility");
-            const input = claudeElements.input;
-            input.type = input.type === 'password' ? 'text' : 'password';
-            claudeElements.showButton.textContent = input.type === 'password' ? 'Show' : 'Hide';
-        });
-    }
-
-    // Gemini API Event Listeners
-    if (geminiElements.saveButton) {
-        geminiElements.saveButton.addEventListener('click', async () => {
-            console.log("Saving Gemini API key");
-            try {
-                const key = geminiElements.input.value.trim();
-                await chrome.storage.local.set({ 'gemini-api-key': key });
-                showApiStatus('Gemini API key saved successfully');
-            } catch (error) {
-                console.error("Error saving Gemini API key:", error);
-                showApiStatus('Error saving Gemini API key', true);
-            }
-        });
-    }
-
-    if (geminiElements.showButton) {
-        geminiElements.showButton.addEventListener('click', () => {
-            console.log("Toggling Gemini API key visibility");
-            const input = geminiElements.input;
-            input.type = input.type === 'password' ? 'text' : 'password';
-            geminiElements.showButton.textContent = input.type === 'password' ? 'Show' : 'Hide';
-        });
-    }
-
-    if (geminiElements.testButton) {
-        geminiElements.testButton.addEventListener('click', async () => {
-            console.log("Test button clicked");
-            try {
-                console.log("Testing Gemini API connection");
-                showApiStatus('Testing Gemini API connection...');
-                console.log("LLMApi available?", typeof window.LLMApi);
-                console.log("GeminiApi available?", typeof window.GeminiApi);
-                const geminiApi = new GeminiApi();
-                console.log("GeminiApi instance created");
-                const result = await geminiApi.testConnection();
-                console.log("Test connection result:", result);
-
-                if (result.success) {
-                    showApiStatus('Gemini API connection successful!');
-                } else {
-                    showApiStatus(`Gemini API test failed: ${result.error}`, true);
-                }
-            } catch (error) {
-                console.error('Error testing Gemini API:', error);
-                showApiStatus(`Error: ${error.message}`, true);
-            }
-        });
-    }
-
-    // Gemini Model Save Handler
-    if (geminiElements.saveModelButton) {
-        geminiElements.saveModelButton.addEventListener('click', async () => {
-            console.log("Saving Gemini model");
-            try {
-                const model = geminiElements.modelInput.value.trim();
-                if (model) {
-                    await chrome.storage.local.set({ 'gemini-model': model });
-                    showApiStatus(`Gemini model set to: ${model}`);
-                } else {
-                    // Clear custom model, will use default
-                    await chrome.storage.local.remove('gemini-model');
-                    showApiStatus('Gemini model reset to default (gemini-2.5-flash)');
-                }
-            } catch (error) {
-                console.error("Error saving Gemini model:", error);
-                showApiStatus('Error saving Gemini model', true);
-            }
+    if (showGoogleSecretBtn && googleSecretInput) {
+        showGoogleSecretBtn.addEventListener('click', () => {
+            googleSecretInput.type = googleSecretInput.type === 'password' ? 'text' : 'password';
+            showGoogleSecretBtn.textContent = googleSecretInput.type === 'password' ? 'Show' : 'Hide';
         });
     }
 }
 
 async function loadApiKeys() {
-    console.log("Loading saved API keys");
+    console.log("Loading saved settings");
     try {
-        const result = await chrome.storage.local.get(['claude-api-key', 'gemini-api-key', 'gemini-model', 'twitter-username', 'twitter-list-id', 'twitter-source-list']);
-
-        const claudeInput = document.getElementById('claude-api-key');
-        if (claudeInput && result['claude-api-key']) {
-            claudeInput.value = result['claude-api-key'];
-            console.log("Claude API key loaded");
-        }
-
-        const geminiInput = document.getElementById('gemini-api-key');
-        if (geminiInput && result['gemini-api-key']) {
-            geminiInput.value = result['gemini-api-key'];
-            console.log("Gemini API key loaded");
-        }
-
-        const geminiModelInput = document.getElementById('gemini-model');
-        if (geminiModelInput) {
-            geminiModelInput.value = result['gemini-model'] || '';
-            geminiModelInput.placeholder = 'gemini-2.5-flash';
-            console.log("Gemini model loaded:", result['gemini-model'] || '(default)');
-        }
+        const result = await chrome.storage.local.get(['twitter-username', 'twitter-list-id', 'twitter-source-list', 'twitter-tab-group-name', 'google-client-secret']);
 
         // Load Twitter List Sync settings
         const twitterUsernameInput = document.getElementById('twitter-username');
@@ -1063,6 +1280,18 @@ async function loadApiKeys() {
         if (twitterListIdInput) {
             twitterListIdInput.value = result['twitter-list-id'] || '';
             console.log("Twitter dest list ID loaded:", result['twitter-list-id'] || '(empty)');
+        }
+
+        const twitterTabGroupInput = document.getElementById('twitter-tab-group');
+        if (twitterTabGroupInput) {
+            twitterTabGroupInput.value = result['twitter-tab-group-name'] || '';
+            console.log("Twitter tab group loaded:", result['twitter-tab-group-name'] || '(default: AI Links)');
+        }
+
+        const googleSecretInput = document.getElementById('google-client-secret');
+        if (googleSecretInput && result['google-client-secret']) {
+            googleSecretInput.value = result['google-client-secret'];
+            console.log("Google client secret loaded");
         }
     } catch (error) {
         console.error("Error loading API keys:", error);
@@ -1123,6 +1352,17 @@ function initializeTwitterListSync() {
         });
     }
 
+    // Save tab group name button
+    const saveTabGroupBtn = document.getElementById('save-tab-group');
+    if (saveTabGroupBtn) {
+        saveTabGroupBtn.addEventListener('click', async () => {
+            const input = document.getElementById('twitter-tab-group');
+            const groupName = input.value.trim();
+            await chrome.storage.local.set({ 'twitter-tab-group-name': groupName || 'AI Links' });
+            showTwitterSyncStatus(groupName ? `Tab group set to "${groupName}"` : 'Tab group reset to "AI Links"', 'success');
+        });
+    }
+
     // Add Only button
     const addOnlyBtn = document.getElementById('sync-add-only');
     if (addOnlyBtn) {
@@ -1139,6 +1379,19 @@ function initializeTwitterListSync() {
     const fullSyncBtn = document.getElementById('sync-full');
     if (fullSyncBtn) {
         fullSyncBtn.addEventListener('click', () => performTwitterSync('full'));
+    }
+
+    // Reset Google Auth button
+    const resetGoogleAuthBtn = document.getElementById('reset-google-auth');
+    if (resetGoogleAuthBtn) {
+        resetGoogleAuthBtn.addEventListener('click', async () => {
+            await chrome.storage.local.remove([
+                'google-access-token',
+                'google-token-expiry',
+                'google-refresh-token'
+            ]);
+            showStatus('Google auth reset - will re-authorize on next use', false);
+        });
     }
 }
 

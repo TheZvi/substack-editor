@@ -9,10 +9,13 @@ window.extractSubstackContent = async function() {
         console.log("Clearing old extracted content from storage...");
         await chrome.storage.local.remove(['extracted_content', 'wordpress_formatted_content', 'twitter_formatted_content']);
 
-        // Get title from title tag and remove " - Substack" suffix
+        // Get title from title tag
+        // Format is: Editing "TITLE" - Substack
         const titleElement = document.querySelector('title');
         if (!titleElement) throw new Error("Could not find title element");
-        const title = titleElement.textContent.replace(" - Substack", "");
+        const rawTitle = titleElement.textContent;
+        const match = rawTitle.match(/^Editing "(.+)" - Substack$/);
+        const title = match ? match[1] : rawTitle.replace(" - Substack", "").trim();
         console.log("Extracted title:", title);
 
         // Get content using the editor selector

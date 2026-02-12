@@ -96,6 +96,16 @@
     #post-twitter:hover, #sync-twitter-list:hover {
       background: #1a91da;
     }
+    /* Post Workup button styling */
+    #post-workup {
+      background: #4CAF50;
+      color: white;
+      border: 1px solid #45a049;
+      font-weight: bold;
+    }
+    #post-workup:hover {
+      background: #45a049;
+    }
     /* Twitter List Sync section */
     #twitter-sync-section select {
       width: 100%;
@@ -135,12 +145,16 @@
 </head>
 <body>
   <div id="status"></div>
+  <button id="post-workup">Post Workup</button>
   <button id="generate-toc">Generate/Update TOC</button>
   <button id="remove-blanks">Remove Blank Sections</button>
   <button id="post-wordpress">Post to WordPress</button>
   <button id="post-twitter">Post to Twitter Article</button>
+  <button id="copy-to-googledoc">Copy to Google Doc</button>
+  <button id="review-googledoc">Review Google Doc (AI)</button>
   <button id="linkify">Linkify Content</button>
   <button id="manage-linkify-rules">Manage Linkify Rules</button>
+  <button id="manage-author-annotations">Manage Author Annotations</button>
   <button id="clean-link-sources">Clean Link Sources</button>
 
   <div id="twitter-sync-section" class="section">
@@ -170,34 +184,33 @@
       Source filled = sync from that list (can be anyone's public list)
     </div>
     <div id="twitter-sync-status"></div>
+    <div class="input-group" style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #eee;">
+      <label for="twitter-tab-group">Tab Group:</label>
+      <input type="text" id="twitter-tab-group" placeholder="AI Links" style="width: 80px;">
+      <button id="save-tab-group">Save</button>
+    </div>
+    <div style="font-size: 11px; color: #666;">
+      Ctrl+Q on pro.x.com opens tweet in this tab group
+    </div>
   </div>
 
   <div id="removal-log"></div>
   <div id="linkify-log"></div>
   <div id="api-key-section" class="section">
-    <h3>API Settings</h3>
+    <h3>Settings</h3>
+    <button id="open-options" style="width: 100%; margin-bottom: 8px;">API Settings (Claude/Gemini)</button>
     <div class="input-group">
-      <label for="claude-api-key">Claude API Key:</label>
-      <input type="password" id="claude-api-key" placeholder="sk-...">
-      <button id="save-api-key">Save</button>
-      <button id="show-key">Show</button>
+      <label for="google-client-secret">Google Secret:</label>
+      <input type="password" id="google-client-secret" placeholder="Client secret" style="width: 100px;">
+      <button id="save-google-secret">Save</button>
+      <button id="show-google-secret" class="icon-button">Show</button>
     </div>
-    <div class="input-group">
-      <label for="gemini-api-key">Gemini API Key:</label>
-      <input type="password" id="gemini-api-key" placeholder="AI...">
-      <button id="save-gemini-key">Save</button>
-      <button id="show-gemini-key">Show</button>
-      <button id="test-gemini-key">Test</button>
-    </div>
-    <div class="input-group">
-      <label for="gemini-model">Gemini Model:</label>
-      <input type="text" id="gemini-model" placeholder="gemini-2.5-flash" style="width: 120px;">
-      <button id="save-gemini-model">Save</button>
-    </div>
-    <div id="api-key-status" class="status"></div>
+    <button id="reset-google-auth" style="margin-top: 10px; background: #ffebee; border-color: #ef9a9a;">Reset Google Auth</button>
   </div>
   <script src="shared/llm/api/llm-api.js"></script>
   <script src="shared/llm/api/gemini_api.js"></script>
+  <script src="shared/google/googledocs-api.js"></script>
+  <script src="shared/google/googledocs-review.js"></script>
   <script src="linkify/linkify-controller.js"></script>
   <script src="popup.js"></script>
 </body>

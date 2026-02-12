@@ -1,0 +1,220 @@
+/* manage-annotations.css */
+.annotations-container {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+section {
+    margin-bottom: 30px;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+h2 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+
+.annotations-list {
+    margin-top: 20px;
+}
+
+.annotation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid #eee;
+    margin-bottom: 8px;
+    border-radius: 4px;
+}
+
+.annotation:hover {
+    background-color: #f9f9f9;
+}
+
+.annotation-content {
+    flex-grow: 1;
+}
+
+.annotation-content strong {
+    color: #333;
+}
+
+.annotation-content .info-tag {
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 13px;
+    margin-left: 8px;
+}
+
+/* Website annotation styling - use a different color to distinguish */
+.website-annotation .info-tag {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.annotation-content .meta {
+    font-size: 12px;
+    color: #888;
+    margin-top: 4px;
+}
+
+.annotation-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.empty-state {
+    color: #888;
+    font-style: italic;
+    padding: 20px;
+    text-align: center;
+}
+
+button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #0066cc;
+    color: white;
+    font-size: 14px;
+}
+
+button:hover {
+    background-color: #0052a3;
+}
+
+button.edit-annotation {
+    background-color: #28a745;
+}
+
+button.edit-annotation:hover {
+    background-color: #218838;
+}
+
+button.delete-annotation {
+    background-color: #dc3545;
+}
+
+button.delete-annotation:hover {
+    background-color: #c82333;
+}
+
+.actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+/* Modal styles */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+}
+
+.modal-content h3 {
+    margin-top: 0;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.form-group input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.form-group.checkbox label {
+    display: flex;
+    align-items: center;
+    font-weight: normal;
+}
+
+.form-group.checkbox input {
+    margin-right: 8px;
+}
+
+.form-group .help-text {
+    font-size: 12px;
+    color: #888;
+    margin-top: 4px;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.form-actions .cancel {
+    background-color: #6c757d;
+}
+
+.form-actions .cancel:hover {
+    background-color: #5a6268;
+}
+
+.status-message {
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    display: none;
+}
+
+.status-message.success {
+    display: block;
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    color: #2e7d32;
+}
+
+.status-message.error {
+    display: block;
+    background: #ffebee;
+    border: 1px solid #ef9a9a;
+    color: #c62828;
+}

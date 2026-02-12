@@ -9,18 +9,19 @@
         <h1>Text Transformer Settings</h1>
         
         <form id="settings-form">
-            <!-- API Selection -->
+            <!-- API Selection for Text Transform -->
             <div class="form-group">
-                <label for="api-select">Select API:</label>
+                <label for="api-select">Text Transform API:</label>
                 <select id="api-select">
                     <option value="gemini">Google Gemini</option>
                     <option value="claude">Anthropic Claude</option>
                 </select>
+                <p style="font-size: 12px; color: #666; margin-top: 4px;">For Ctrl+Q text transformation. Doc Review uses Claude if configured, else Gemini.</p>
             </div>
 
             <!-- Anthropic Settings -->
             <div class="api-settings" id="claude-settings">
-                <h2>Anthropic Claude Settings</h2>
+                <h2>Anthropic Claude Settings (Preferred for Doc Review)</h2>
                 <div class="form-group">
                     <label for="claude-key">API Key:</label>
                     <input type="password" id="claude-key" />
@@ -29,9 +30,10 @@
                 <div class="form-group">
                     <label for="claude-model">Model:</label>
                     <select id="claude-model">
-                        <option value="claude-3-haiku">Claude 3 Haiku</option>
-                        <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                        <option value="claude-3-opus">Claude 3 Opus</option>
+                        <option value="claude-opus-4-5-20251101">Claude Opus 4.5 (Best)</option>
+                        <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                        <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                        <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast)</option>
                     </select>
                 </div>
             </div>
@@ -47,7 +49,12 @@
                 <div class="form-group">
                     <label for="gemini-model">Model:</label>
                     <select id="gemini-model">
-                        <option value="gemini-pro">Gemini Pro</option>
+                        <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+                        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
                     </select>
                 </div>
             </div>

@@ -1,7 +1,7 @@
 console.log("Starting to load GeminiApi...");
 
 // Default model - can be overridden via chrome.storage
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash-lite';
 
 class GeminiApi extends LLMApi {
     constructor(config = {}) {
@@ -91,7 +91,9 @@ Return the transformed text directly without any additional commentary or labels
         });
 
         if (!response.ok) {
-            throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+            const errorBody = await response.text();
+            console.error(`Gemini API error ${response.status}:`, errorBody);
+            throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 
         const data = await response.json();

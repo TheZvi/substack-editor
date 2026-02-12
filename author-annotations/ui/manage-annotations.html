@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manage Author Annotations</title>
+</head>
+<body>
+    <div class="annotations-container">
+        <div id="status-message" class="status-message"></div>
+
+        <section>
+            <h2>Author Annotations</h2>
+            <p style="color: #666; font-size: 14px;">
+                When copying quotes with Alt+A, matching authors will have their annotation shown in parentheses.
+                Example: <strong>theseriousadult (Anthropic)</strong>: tweet text here...
+            </p>
+            <button id="add-annotation">Add Annotation</button>
+            <div class="annotations-list" id="annotations-list">
+                <!-- Annotations rendered here -->
+            </div>
+        </section>
+
+        <section>
+            <h2>Website Annotations</h2>
+            <p style="color: #666; font-size: 14px;">
+                When copying quotes from a website, if no author annotation matches, a website annotation will be added.
+                Example: From wsj.com: <strong>Some Author (WSJ)</strong>: quote text here...
+            </p>
+            <button id="add-website-annotation">Add Website</button>
+            <div class="annotations-list" id="website-annotations-list">
+                <!-- Website annotations rendered here -->
+            </div>
+        </section>
+
+        <div class="actions">
+            <button id="export-annotations">Export JSON</button>
+            <button id="import-annotations">Import JSON</button>
+        </div>
+    </div>
+
+    <!-- Author Annotation Editor Modal -->
+    <div id="annotation-editor" class="modal">
+        <div class="modal-content">
+            <h3 id="modal-title">Add Annotation</h3>
+            <form id="annotation-form">
+                <div class="form-group">
+                    <label for="ann-name">Name to Match:</label>
+                    <input type="text" id="ann-name" name="name" required placeholder="e.g. theseriousadult">
+                    <div class="help-text">Matched case-insensitively against the author/display name</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ann-info">Annotation Text:</label>
+                    <input type="text" id="ann-info" name="info" required placeholder="e.g. Anthropic">
+                    <div class="help-text">Shown in parentheses after the name</div>
+                </div>
+
+                <div class="form-group checkbox">
+                    <label>
+                        <input type="checkbox" id="ann-twitter-only" name="twitterOnly">
+                        Twitter/X only
+                    </label>
+                    <div class="help-text">If checked, annotation only appears when copying from Twitter/X</div>
+                </div>
+
+                <div class="form-group" id="handle-match-group">
+                    <label for="ann-handle">Twitter Handle:</label>
+                    <input type="text" id="ann-handle" name="handleMatch" placeholder="e.g. @theseriousadult">
+                    <div class="help-text">Optional. On Twitter, matches by handle instead of display name</div>
+                </div>
+
+                <input type="hidden" id="ann-edit-index" value="-1">
+
+                <div class="form-actions">
+                    <button type="submit">Save</button>
+                    <button type="button" class="cancel" id="modal-cancel">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Website Annotation Editor Modal -->
+    <div id="website-annotation-editor" class="modal">
+        <div class="modal-content">
+            <h3 id="website-modal-title">Add Website</h3>
+            <form id="website-annotation-form">
+                <div class="form-group">
+                    <label for="website-domain">Domain:</label>
+                    <input type="text" id="website-domain" name="domain" required placeholder="e.g. wsj.com">
+                    <div class="help-text">Domain to match (e.g., wsj.com matches www.wsj.com)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="website-annotation">Annotation Text:</label>
+                    <input type="text" id="website-annotation" name="annotation" required placeholder="e.g. WSJ">
+                    <div class="help-text">Shown in parentheses after the author name when no author annotation matches</div>
+                </div>
+
+                <input type="hidden" id="website-edit-index" value="-1">
+
+                <div class="form-actions">
+                    <button type="submit">Save</button>
+                    <button type="button" class="cancel" id="website-modal-cancel">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="manage-annotations.js"></script>
+</body>
+</html>

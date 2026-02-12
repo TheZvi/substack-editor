@@ -8,11 +8,21 @@
     "scripting",
     "storage",
     "tabs",
+    "tabGroups",
     "contextMenus",
     "commands",
     "notifications",
-    "webNavigation"
+    "webNavigation",
+    "identity",
+    "sessions"
   ],
+  "oauth2": {
+    "client_id": "633231389022-1g8alhfppclvipc7ndqllubltkr0ap1b.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/documents",
+      "https://www.googleapis.com/auth/drive"
+    ]
+  },
   "host_permissions": [
     "https://*.wordpress.com/*",
     "https://*.substack.com/publish/post/*",
@@ -21,8 +31,12 @@
     "https://generativelanguage.googleapis.com/*",
     "https://x.com/*",
     "https://*.x.com/*",
+    "https://pro.x.com/*",
     "https://substackcdn.com/*",
-    "https://*.substackcdn.com/*"
+    "https://*.substackcdn.com/*",
+    "https://docs.google.com/*",
+    "https://www.googleapis.com/*",
+    "https://oauth2.googleapis.com/*"
   ],
   "commands": {        
     "transform-text": {
@@ -46,6 +60,27 @@
       "js": ["receivers/twitter-receiver.js"],
       "all_frames": true,
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*", "https://pro.x.com/*"],
+      "js": ["twitter/twitter-shortcuts.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://docs.google.com/document/*"],
+      "js": ["receivers/googledoc-receiver.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": [
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://pro.x.com/*",
+        "https://*.substack.com/publish/post/*"
+      ],
+      "js": ["universal/quote-copy.js"],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [{
@@ -56,7 +91,9 @@
       "receivers/wordpress-receiver.js",
       "receivers/twitter-receiver.js",
       "receivers/twitter-newline-fixer.js",
+      "receivers/googledoc-receiver.js",
       "twitter/twitter-list-sync.js",
+      "twitter/twitter-shortcuts.js",
       "linkify/default-rules.json",
       "linkify/linkify-controller.js",
       "linkify/ui/manage-linkify-rules.html",
@@ -68,9 +105,15 @@
       "shared/llm/config/api-keys.local.js",
       "shared/llm/config/*",
       "features/text-transform/*",
-      "shared/llm/api/default-rules.json"
+      "shared/llm/api/default-rules.json",
+      "shared/google/googledocs-api.js",
+      "shared/google/googledocs-review.js",
+      "universal/quote-copy.js",
+      "author-annotations/ui/manage-annotations.html",
+      "author-annotations/ui/manage-annotations.js",
+      "author-annotations/ui/manage-annotations.css"
     ],
-    "matches": ["https://*.substack.com/*", "https://*.wordpress.com/*", "https://x.com/*"]
+    "matches": ["<all_urls>"]
   }],
   "background": {
     "service_worker": "background.js"
