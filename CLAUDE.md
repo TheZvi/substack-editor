@@ -712,7 +712,16 @@ Google Docs' Find feature only **highlights** text, it doesn't **select** it. Co
 Edit `linkify/default-rules.json` or use the UI at `linkify/ui/manage-linkify-rules.html`
 
 ### Modifying Text Transformation Rules
-Edit `shared/llm/api/default-rules.json` - rules have priorities and can be enabled/disabled
+The live Ctrl+Q rules are in `features/text-transform/transform-controller.js`:
+- `getCoreRules()` - mechanical fixes + preservation constraints, applied in both modes
+- `getOwnProseRules()` - extra latitude when editing Zvi's own prose
+- `getQuoteRules()` - restrictions when the selection is inside a `<blockquote>` (someone else's words)
+
+Mode is auto-detected: selection inside a blockquote = quote mode (conservative, "would the author endorse this as a faithful quote?"); otherwise own-prose mode (more liberal, voice-preserving). House style: NO Oxford comma, contract spelled-out forms to acronyms, never expand acronyms, never add em-dashes/transitions/summaries, preserve fragments/contractions/one-line paragraphs.
+
+When changing rules, keep the mirrored copies in `tests/transformController.test.js` in sync (tests 49-56f assert rule presence).
+
+Note: `shared/llm/api/default-rules.json` is only used by the base-class `transformText()` fallback paths, not by the Gemini transform.
 
 ## Testing
 

@@ -86,7 +86,12 @@ Return the transformed text directly without any additional commentary or labels
                     parts: [{
                         text: prompt
                     }]
-                }]
+                }],
+                generationConfig: {
+                    // Low temperature: this is mechanical editing, not creative
+                    // writing - we want deterministic, minimal, repeatable edits
+                    temperature: 0.15
+                }
             })
         });
 

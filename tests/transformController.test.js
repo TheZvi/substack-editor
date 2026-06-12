@@ -578,22 +578,33 @@ console.log('\nTest 48: Starting from number other than 1');
 
 console.log('\n=== Grammar Rule Configuration Tests ===\n');
 
-// Simulated rules from transform-controller.js (for testing rule presence)
-const transformationRules = [
-    { "priority": 0, "description": "CRITICAL: NEVER MODIFY ANY OF THESE: 1) Never expand 'ASI', 'AGI', 'AI', 'GPT', 'LLM', or 'NLP' into full words 2) Never change single quotes (') to double quotes (\") or vice versa. Leave all quotes exactly as they appear." },
-    { "priority": 1, "description": "CRITICAL: Preserve ALL HTML anchor tags exactly as written. Every <a href=\"...\">text</a> must remain intact with the same href URL and link text. Never remove, modify, or break any links." },
-    { "priority": 2, "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS" },
-    { "priority": 3, "description": "Expand all abbreviations and make any other fixes according to the New York Times style guide" },
-    { "priority": 4, "description": "Remove excessive whitespace and newlines while preserving paragraph breaks" },
-    { "priority": 5, "description": "Preserve hashtags and URLs exactly as written" },
-    { "priority": 6, "description": "If you know the name an @mention refers to, replace it with that name, otherwise leave it exactly as is." },
-    { "priority": 7, "description": "SERIAL LISTS: In a list of 3+ items (X, Y and Z), the 'and' belongs before the FINAL item only. If 'and' appears mid-list, move it to before the final item and remove any comma before that final item. Example: 'ask permission, add folders and without restarting, make suggestions' → 'ask permission, add folders without restarting and make suggestions'. NEVER add Oxford commas (no comma before 'and'). The pattern should be 'X, Y, Z and W' not 'X, Y, Z, and W'." },
-    { "priority": 8, "description": "Fix clear punctuation errors like missing periods at end of sentences or double periods. Only change a question mark to a period (or vice versa), or an exclamation mark to a period (or vice versa), if it is an obvious error. Otherwise respect the author's punctuation choices." },
-    { "priority": 9, "description": "Remove extra line breaks before and after @mentions" },
-    { "priority": 10, "description": "NUMBERED LISTS: If text contains numbered items (like '1. item' followed by '2. item' on next line), convert them to proper HTML ordered list format: <ol><li>first item text without number</li><li>second item text without number</li></ol>. Remove the number prefixes (1., 2., etc.) since the <ol> handles numbering. Preserve paragraph breaks between list items if content is long." },
-    { "priority": 11, "description": "SUBJECT-VERB AGREEMENT: Fix subject-verb agreement errors. Examples: 'X and Y is' → 'X and Y are'; 'The team are' → 'The team is'; 'Neither X nor Y are' → 'Neither X nor Y is'. Compound subjects joined by 'and' take plural verbs." },
-    { "priority": 12, "description": "Fix all spelling and grammar errors according to the New York Times style guide, but do not change capitalization of acronyms." }
+// Simulated rules from transform-controller.js (for testing rule presence).
+// Keep these in sync with getCoreRules/getOwnProseRules/getQuoteRules.
+const coreRules = [
+    { "priority": 0, "description": "CRITICAL PRESERVATION: 1) Never expand 'ASI', 'AGI', 'AI', 'GPT', 'LLM', or 'NLP' into full words - and CONTRACT spelled-out forms to the acronym ('artificial intelligence' → 'AI', 'artificial general intelligence' → 'AGI', 'large language model' → 'LLM') 2) Never change single quotes (') to double quotes (\") or vice versa - leave all quote marks exactly as they appear 3) Preserve ALL HTML anchor tags exactly as written - every <a href=\"...\">text</a> must keep the same href URL and link text; never remove, modify or break any links 4) Preserve hashtags and URLs exactly as written 5) Preserve square-bracket editorial insertions like [here] or [sic] exactly." },
+    { "priority": 1, "description": "Fix typos and misspellings (e.g. 'teh' → 'the', 'sentance' → 'sentence')." },
+    { "priority": 2, "description": "Fix grammar errors ONLY when they are clearly unintentional mistakes: subject-verb agreement ('X and Y is' → 'X and Y are'; 'The team are' → 'The team is'; 'Neither X nor Y are' → 'Neither X nor Y is'; compound subjects joined by 'and' take plural verbs), tense slips and doubled words. Do NOT change phrasing that could be intentional or stylistic." },
+    { "priority": 3, "description": "Fix clear punctuation errors: missing periods at the end of sentences, double periods, stray spaces before punctuation. Only change a question mark to a period (or vice versa), or an exclamation mark to a period (or vice versa), if it is an obvious error. Otherwise respect the author's punctuation choices." },
+    { "priority": 4, "description": "Fix capitalization at sentence starts and of proper nouns, while preserving intentional ALL CAPS and Title Case headers." },
+    { "priority": 5, "description": "SERIAL LISTS: In a list of 3+ items (X, Y and Z), the 'and' belongs before the FINAL item only. If 'and' appears mid-list, move it to before the final item and remove any comma before that final item. Example: 'ask permission, add folders and without restarting, make suggestions' → 'ask permission, add folders without restarting and make suggestions'. NEVER add Oxford commas (no comma before 'and'). The pattern should be 'X, Y, Z and W' not 'X, Y, Z, and W'." },
+    { "priority": 6, "description": "PARAGRAPH BREAKS: Adjust paragraph breaks and whitespace for readability. Join lines that were broken mid-sentence (common in pasted tweets). Split long walls of text into paragraphs at natural topic boundaries. Preserve deliberate one-line paragraphs and all intentional existing breaks. Remove excessive blank lines while preserving paragraph breaks." },
+    { "priority": 7, "description": "NUMBERED LISTS: If text contains numbered items (like '1. item' followed by '2. item' on next line), convert them to proper HTML ordered list format: <ol><li>first item text without number</li><li>second item text without number</li></ol>. Remove the number prefixes (1., 2., etc.) since the <ol> handles numbering. Preserve paragraph breaks between list items if content is long." },
+    { "priority": 8, "description": "If you know the name an @mention refers to, replace it with that name, otherwise leave it exactly as is. Remove extra line breaks before and after @mentions." },
+    { "priority": 9, "description": "MINIMAL EDIT PRINCIPLE: Never ADD em-dashes, transition words, summary sentences or intensifiers. Do not rewrite, reorder or restructure. Make the smallest change that fixes each problem; when in doubt, leave it as written." }
 ];
+
+const ownProseRules = [
+    { "priority": 10, "description": "VOICE: This is the author's own prose. Sentence fragments ('Good luck with that.'), one-line paragraphs, rhetorical questions, colloquialisms and contractions are deliberate style - never 'fix' them. Never expand contractions ('it's' stays 'it's'). Asterisk-censored profanity stays exactly as written." },
+    { "priority": 11, "description": "NUMBERS: Use digits for large or precise values and words for small casual counts, but leave existing defensible choices unchanged." }
+];
+
+const quoteRules = [
+    { "priority": 10, "description": "QUOTED TEXT: This text quotes another author. Apply ONLY the mechanical fixes above. Never change word choice, tone or register (quoted slang like 'gonna' stays). Never add or remove content. Never fix the author's logic, arguments or claims. Only fix grammar when the error is clearly an unintentional mistake. The result must be something the original author would endorse as a faithful quote of what they wrote." }
+];
+
+// Combined set used by the rule-presence tests below (quote mode is a superset
+// check: every core rule applies in both modes)
+const transformationRules = [...coreRules, ...ownProseRules, ...quoteRules];
 
 console.log('Test 49: Subject-verb agreement rule exists');
 {
@@ -607,7 +618,7 @@ console.log('Test 49: Subject-verb agreement rule exists');
 console.log('\nTest 50: Subject-verb rule includes compound subject example');
 {
     const subjectVerbRule = transformationRules.find(r =>
-        r.description.includes('SUBJECT-VERB AGREEMENT')
+        r.description.includes('subject-verb agreement')
     );
     assertContains(subjectVerbRule?.description || '', 'X and Y is', 'Rule includes compound subject example');
     assertContains(subjectVerbRule?.description || '', 'X and Y are', 'Rule shows correct plural verb');
@@ -660,6 +671,53 @@ console.log('\nTest 56: Serial list rule prohibits Oxford comma');
     );
     assertContains(serialListRule?.description || '', 'NEVER add Oxford commas', 'Rule prohibits Oxford commas');
     assertContains(serialListRule?.description || '', 'X, Y, Z and W', 'Rule shows correct pattern without Oxford comma');
+}
+
+console.log('\nTest 56a: NYT style-guide expansion rule is gone');
+{
+    const hasNytRule = transformationRules.some(r =>
+        r.description.includes('New York Times')
+    );
+    assertEqual(hasNytRule, false, 'No rule references the New York Times style guide');
+    const hasExpandAbbrev = transformationRules.some(r =>
+        r.description.includes('Expand all abbreviations')
+    );
+    assertEqual(hasExpandAbbrev, false, 'No rule expands abbreviations');
+}
+
+console.log('\nTest 56b: Acronym contraction rule exists');
+{
+    const acronymRule = coreRules.find(r => r.description.includes('CONTRACT'));
+    assertContains(acronymRule?.description || '', "'artificial intelligence' → 'AI'", 'Rule contracts spelled-out forms to acronyms');
+}
+
+console.log('\nTest 56c: Minimal edit principle exists in core rules');
+{
+    const minimalRule = coreRules.find(r => r.description.includes('MINIMAL EDIT'));
+    assertContains(minimalRule?.description || '', 'em-dashes', 'Rule forbids adding em-dashes');
+    assertContains(minimalRule?.description || '', 'transition words', 'Rule forbids adding transitions');
+}
+
+console.log('\nTest 56d: Own-prose mode protects authorial voice');
+{
+    const voiceRule = ownProseRules.find(r => r.description.includes('VOICE'));
+    assertContains(voiceRule?.description || '', 'Sentence fragments', 'Rule protects sentence fragments');
+    assertContains(voiceRule?.description || '', 'contractions', 'Rule protects contractions');
+}
+
+console.log('\nTest 56e: Quote mode restricts edits to faithful-quote standard');
+{
+    const quoteRule = quoteRules.find(r => r.description.includes('QUOTED TEXT'));
+    assertContains(quoteRule?.description || '', 'word choice', 'Rule forbids word-choice changes');
+    assertContains(quoteRule?.description || '', 'faithful quote', 'Rule states the faithful-quote standard');
+    assertContains(quoteRule?.description || '', 'clearly an unintentional mistake', 'Rule limits grammar fixes to clear mistakes');
+}
+
+console.log('\nTest 56f: Paragraph re-breaking rule exists in core rules');
+{
+    const paraRule = coreRules.find(r => r.description.includes('PARAGRAPH BREAKS'));
+    assertContains(paraRule?.description || '', 'pasted tweets', 'Rule joins mid-sentence breaks from tweets');
+    assertContains(paraRule?.description || '', 'one-line paragraphs', 'Rule preserves deliberate one-liners');
 }
 
 // =====================================================

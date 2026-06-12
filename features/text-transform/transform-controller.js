@@ -3,24 +3,7 @@
 class TransformController {
     constructor() {
         this.api = new window.GeminiApi();
-        this.rules = {
-            transformationRules: [
-                { "priority": 0, "description": "CRITICAL: NEVER MODIFY ANY OF THESE: 1) Never expand 'ASI', 'AGI', 'AI', 'GPT', 'LLM', or 'NLP' into full words 2) Never change single quotes (') to double quotes (\") or vice versa. Leave all quotes exactly as they appear." },
-                { "priority": 1, "description": "CRITICAL: Preserve ALL HTML anchor tags exactly as written. Every <a href=\"...\">text</a> must remain intact with the same href URL and link text. Never remove, modify, or break any links." },
-                { "priority": 2, "description": "Fix capitalization of sentences and proper nouns while preserving intentional ALL CAPS" },
-                { "priority": 3, "description": "Expand all abbreviations and make any other fixes according to the New York Times style guide" },
-                { "priority": 4, "description": "Remove excessive whitespace and newlines while preserving paragraph breaks" },
-                { "priority": 5, "description": "Preserve hashtags and URLs exactly as written" },
-                { "priority": 6, "description": "If you know the name an @mention refers to, replace it with that name, otherwise leave it exactly as is." },
-                { "priority": 7, "description": "SERIAL LISTS: In a list of 3+ items (X, Y and Z), the 'and' belongs before the FINAL item only. If 'and' appears mid-list, move it to before the final item and remove any comma before that final item. Example: 'ask permission, add folders and without restarting, make suggestions' → 'ask permission, add folders without restarting and make suggestions'. NEVER add Oxford commas (no comma before 'and'). The pattern should be 'X, Y, Z and W' not 'X, Y, Z, and W'." },
-                { "priority": 8, "description": "Fix clear punctuation errors like missing periods at end of sentences or double periods. Only change a question mark to a period (or vice versa), or an exclamation mark to a period (or vice versa), if it is an obvious error. Otherwise respect the author's punctuation choices." },
-                { "priority": 9, "description": "Remove extra line breaks before and after @mentions" },
-                { "priority": 10, "description": "NUMBERED LISTS: If text contains numbered items (like '1. item' followed by '2. item' on next line), convert them to proper HTML ordered list format: <ol><li>first item text without number</li><li>second item text without number</li></ol>. Remove the number prefixes (1., 2., etc.) since the <ol> handles numbering. Preserve paragraph breaks between list items if content is long." },
-                { "priority": 11, "description": "SUBJECT-VERB AGREEMENT: Fix subject-verb agreement errors. Examples: 'X and Y is' → 'X and Y are'; 'The team are' → 'The team is'; 'Neither X nor Y are' → 'Neither X nor Y is'. Compound subjects joined by 'and' take plural verbs." },
-                { "priority": 12, "description": "Fix all spelling and grammar errors according to the New York Times style guide, but do not change capitalization of acronyms." }
-            ]
-        };
-        
+
         window.addEventListener('message', async (event) => {
             if (event.source !== window) return;
 
@@ -39,8 +22,66 @@ class TransformController {
         window.postMessage({ type: 'transform-controller-ready' }, '*');
     }
 
-    async getRules() {
-        return this.rules.transformationRules;
+    /**
+     * Mechanical fixes and hard preservation constraints - applied in BOTH modes
+     */
+    getCoreRules() {
+        return [
+            { "priority": 0, "description": "CRITICAL PRESERVATION: 1) Never expand 'ASI', 'AGI', 'AI', 'GPT', 'LLM', or 'NLP' into full words - and CONTRACT spelled-out forms to the acronym ('artificial intelligence' → 'AI', 'artificial general intelligence' → 'AGI', 'large language model' → 'LLM') 2) Never change single quotes (') to double quotes (\") or vice versa - leave all quote marks exactly as they appear 3) Preserve ALL HTML anchor tags exactly as written - every <a href=\"...\">text</a> must keep the same href URL and link text; never remove, modify or break any links 4) Preserve hashtags and URLs exactly as written 5) Preserve square-bracket editorial insertions like [here] or [sic] exactly." },
+            { "priority": 1, "description": "Fix typos and misspellings (e.g. 'teh' → 'the', 'sentance' → 'sentence')." },
+            { "priority": 2, "description": "Fix grammar errors ONLY when they are clearly unintentional mistakes: subject-verb agreement ('X and Y is' → 'X and Y are'; 'The team are' → 'The team is'; 'Neither X nor Y are' → 'Neither X nor Y is'; compound subjects joined by 'and' take plural verbs), tense slips and doubled words. Do NOT change phrasing that could be intentional or stylistic." },
+            { "priority": 3, "description": "Fix clear punctuation errors: missing periods at the end of sentences, double periods, stray spaces before punctuation. Only change a question mark to a period (or vice versa), or an exclamation mark to a period (or vice versa), if it is an obvious error. Otherwise respect the author's punctuation choices." },
+            { "priority": 4, "description": "Fix capitalization at sentence starts and of proper nouns, while preserving intentional ALL CAPS and Title Case headers." },
+            { "priority": 5, "description": "SERIAL LISTS: In a list of 3+ items (X, Y and Z), the 'and' belongs before the FINAL item only. If 'and' appears mid-list, move it to before the final item and remove any comma before that final item. Example: 'ask permission, add folders and without restarting, make suggestions' → 'ask permission, add folders without restarting and make suggestions'. NEVER add Oxford commas (no comma before 'and'). The pattern should be 'X, Y, Z and W' not 'X, Y, Z, and W'." },
+            { "priority": 6, "description": "PARAGRAPH BREAKS: Adjust paragraph breaks and whitespace for readability. Join lines that were broken mid-sentence (common in pasted tweets). Split long walls of text into paragraphs at natural topic boundaries. Preserve deliberate one-line paragraphs and all intentional existing breaks. Remove excessive blank lines while preserving paragraph breaks." },
+            { "priority": 7, "description": "NUMBERED LISTS: If text contains numbered items (like '1. item' followed by '2. item' on next line), convert them to proper HTML ordered list format: <ol><li>first item text without number</li><li>second item text without number</li></ol>. Remove the number prefixes (1., 2., etc.) since the <ol> handles numbering. Preserve paragraph breaks between list items if content is long." },
+            { "priority": 8, "description": "If you know the name an @mention refers to, replace it with that name, otherwise leave it exactly as is. Remove extra line breaks before and after @mentions." },
+            { "priority": 9, "description": "MINIMAL EDIT PRINCIPLE: Never ADD em-dashes, transition words, summary sentences or intensifiers. Do not rewrite, reorder or restructure. Make the smallest change that fixes each problem; when in doubt, leave it as written." }
+        ];
+    }
+
+    /**
+     * Extra rules when editing the author's OWN prose (not inside a blockquote)
+     */
+    getOwnProseRules() {
+        return [
+            { "priority": 10, "description": "VOICE: This is the author's own prose. Sentence fragments ('Good luck with that.'), one-line paragraphs, rhetorical questions, colloquialisms and contractions are deliberate style - never 'fix' them. Never expand contractions ('it's' stays 'it's'). Asterisk-censored profanity stays exactly as written." },
+            { "priority": 11, "description": "NUMBERS: Use digits for large or precise values and words for small casual counts, but leave existing defensible choices unchanged." }
+        ];
+    }
+
+    /**
+     * Extra rules when editing QUOTED text (selection inside a blockquote)
+     */
+    getQuoteRules() {
+        return [
+            { "priority": 10, "description": "QUOTED TEXT: This text quotes another author. Apply ONLY the mechanical fixes above. Never change word choice, tone or register (quoted slang like 'gonna' stays). Never add or remove content. Never fix the author's logic, arguments or claims. Only fix grammar when the error is clearly an unintentional mistake. The result must be something the original author would endorse as a faithful quote of what they wrote." }
+        ];
+    }
+
+    /**
+     * Build the full rule set for the current mode
+     * @param {boolean} isQuote - true when the selection is inside a blockquote
+     */
+    buildRules(isQuote) {
+        return [
+            ...this.getCoreRules(),
+            ...(isQuote ? this.getQuoteRules() : this.getOwnProseRules())
+        ];
+    }
+
+    /**
+     * Detect whether the current selection sits inside a blockquote,
+     * which means we are editing someone else's quoted words
+     */
+    isSelectionInBlockquote() {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return false;
+        let node = selection.getRangeAt(0).commonAncestorContainer;
+        if (node.nodeType === Node.TEXT_NODE) {
+            node = node.parentElement;
+        }
+        return !!(node && node.closest && node.closest('blockquote'));
     }
 
     /**
@@ -150,7 +191,7 @@ class TransformController {
         return result;
     }
 
-    showWorkingIndicator() {
+    showWorkingIndicator(label = 'Transforming text…') {
         // Remove any existing indicator
         this.hideWorkingIndicator();
 
@@ -179,7 +220,7 @@ class TransformController {
                 <style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
                 <circle cx="12" cy="12" r="10" stroke="white" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
             </svg>
-            Transforming text...
+            ${label}
         `;
         document.body.appendChild(indicator);
     }
@@ -266,8 +307,13 @@ class TransformController {
                 }
             }
 
+            // Quote mode (inside a blockquote) gets conservative rules;
+            // the author's own prose gets the more liberal set
+            const isQuote = this.isSelectionInBlockquote();
+            console.log("[Transform] Mode:", isQuote ? "quote (conservative)" : "own prose (liberal)");
+
             // Show working indicator
-            this.showWorkingIndicator();
+            this.showWorkingIndicator(isQuote ? 'Transforming quote…' : 'Transforming text…');
 
             const userSelection = window.getSelection();
             if (!userSelection || userSelection.rangeCount === 0) {
@@ -298,13 +344,7 @@ class TransformController {
             // This ensures the list structure is preserved through LLM transformation
             processedText = this.convertNumberedListsToHtml(processedText);
 
-            // Prepend rule to preserve HTML links, lists and other critical elements.
-            // Build a new array - mutating the shared rules array would add a
-            // duplicate copy of this rule on every transform in the session.
-            const rules = [{
-                priority: -1,
-                description: "MOST IMPORTANT: Preserve these exactly: 1) All acronyms 'ASI', 'AGI', 'AI', 'GPT', 'LLM', 'NLP' must stay as acronyms 2) All quote marks must stay exactly as they are (don't change ' to \" or vice versa) 3) ALL HTML anchor tags <a href=\"...\">text</a> must be preserved exactly with their URLs intact 4) ALL HTML ordered list tags <ol><li>...</li></ol> must be preserved exactly - do not convert them to plain text"
-            }, ...(await this.getRules())];
+            const rules = this.buildRules(isQuote);
 
             const transformedText = await this.api.transformText(processedText, apiKey, rules);
 
