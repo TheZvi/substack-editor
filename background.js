@@ -24,17 +24,43 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 // Handle keyboard command
-chrome.commands.onCommand.addListener((command, tab) => {
+chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command === "transform-text") {
-      chrome.tabs.sendMessage(tab.id, {
-          action: "transformText"
-      }, (response) => {
-          if (chrome.runtime.lastError) {
-              console.error("Error sending transform message:", chrome.runtime.lastError);
-          }
-      });
+      try {
+          await sendTransformCommand(tab.id);
+      } catch (error) {
+          console.error("[Background] Transform command failed:", error);
+      }
   }
 });
+
+/**
+ * Send the transformText message, injecting content.js first if the content
+ * script is not running (e.g. after an extension reload, or an SPA navigation
+ * that the webNavigation handler missed).
+ */
+async function sendTransformCommand(tabId) {
+  // Check the content script is alive with a ping
+  let alive = false;
+  try {
+      await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+      alive = true;
+  } catch (e) {
+      console.log('[Background] Content script not responding, injecting...');
+  }
+
+  if (!alive) {
+      await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content.js']
+      });
+      // Give the content script a moment to register listeners and start
+      // loading the page-context transform scripts
+      await new Promise(resolve => setTimeout(resolve, 300));
+  }
+
+  await chrome.tabs.sendMessage(tabId, { action: 'transformText' });
+}
 
 // ============================================================================
 // SPA Navigation Detection - Inject content scripts on client-side navigation

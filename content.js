@@ -10,6 +10,9 @@ if (window.__substackEditorContentScriptLoaded) {
 }
 window.__substackEditorContentScriptLoaded = true;
 
+// Tracks whether the page-context TransformController has announced itself
+let transformControllerReady = false;
+
 // Listen for messages from the extension
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
    // Ping handler - used to check if content script is running
@@ -18,16 +21,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
        return;
    }
    if (request.action === "transformText") {
-       // Forward the message to the page context
-       window.postMessage({
-           type: 'transform-text',
-           text: request.text
-       }, '*');
-       // Acknowledge receipt
-       sendResponse({received: true});
+       (async () => {
+           const ready = await ensureTransformControllerReady();
+           if (!ready) {
+               showCopyNotification("Transform unavailable - controller failed to load. Try reloading the page.", true);
+               sendResponse({ received: false, error: 'controller not loaded' });
+               return;
+           }
+           // Forward the message to the page context
+           window.postMessage({
+               type: 'transform-text',
+               text: request.text
+           }, '*');
+           sendResponse({ received: true });
+       })();
+       return true; // Async response
    }
-   return true; // Indicates we'll send a response asynchronously
 });
+
+/**
+ * Make sure the page-context transform controller is loaded, (re)loading the
+ * scripts if needed. Returns true once the controller has announced ready.
+ */
+async function ensureTransformControllerReady(timeoutMs = 4000) {
+    if (transformControllerReady) return true;
+
+    await loadTransformScripts();
+
+    const start = Date.now();
+    while (!transformControllerReady && Date.now() - start < timeoutMs) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return transformControllerReady;
+}
 
 // Handle communication between page scripts and chrome.storage
 window.addEventListener('message', async (event) => {
@@ -62,6 +88,14 @@ window.addEventListener('message', async (event) => {
            model: result['gemini-model']
        }, '*');
    }
+   else if (event.data.type === 'transform-controller-ready') {
+       transformControllerReady = true;
+   }
+   else if (event.data.type === 'transform-error') {
+       // Surface transform failures to the user instead of failing silently
+       console.error('[Transform] Error from page context:', event.data.error);
+       showCopyNotification('Transform failed: ' + (event.data.error || 'unknown error'), true);
+   }
    else if (event.data.type === 'claude-api-request' || event.data.type === 'gemini-api-request') {
        try {
            const response = await chrome.runtime.sendMessage({
@@ -84,15 +118,29 @@ window.addEventListener('message', async (event) => {
    }
 });
 
+let transformScriptsLoadAttempted = false;
+
 async function loadTransformScripts() {
+    if (transformScriptsLoadAttempted) return;
+    transformScriptsLoadAttempted = true;
+
+    // api-keys.local.js is optional (gitignored). Its absence must not block
+    // the rest of the chain - keys normally come from chrome.storage anyway.
+    try {
+        await loadScript('shared/llm/config/api-keys.local.js');
+    } catch (e) {
+        console.warn('[Transform] api-keys.local.js not found (optional, continuing)');
+    }
+
     try {
         // Load scripts in sequence
-        await loadScript('shared/llm/config/api-keys.local.js');
         await loadScript('shared/llm/api/base-api.js');
         await loadScript('shared/llm/api/gemini_api.js');
         await loadScript('shared/llm/api/claude_api.js');
         await loadScript('features/text-transform/transform-controller.js');
     } catch (error) {
+        // Allow a retry on the next transform attempt
+        transformScriptsLoadAttempted = false;
         console.error('Error loading transform scripts:', error);
     }
 }
@@ -107,8 +155,17 @@ function loadScript(path) {
     });
 }
 
-// Call the loading function
-loadTransformScripts();
+// Load the page-context transform scripts. After an extension reload the page
+// context may still have a live TransformController from the previous content
+// script instance (page context survives extension reloads); ask it to announce
+// itself first so we don't double-load and trigger class-redeclaration errors.
+(async () => {
+    window.postMessage({ type: 'transform-controller-check' }, '*');
+    await new Promise(resolve => setTimeout(resolve, 200));
+    if (!transformControllerReady) {
+        await loadTransformScripts();
+    }
+})();
 
 // ============================================================================
 // Blockquote Override - Restore markdown "> " behavior

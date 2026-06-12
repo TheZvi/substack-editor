@@ -23,10 +23,20 @@ class TransformController {
         
         window.addEventListener('message', async (event) => {
             if (event.source !== window) return;
+
+            if (event.data.type === 'transform-controller-check') {
+                // Content script (possibly a new instance after an extension
+                // reload) is asking whether a controller already exists
+                window.postMessage({ type: 'transform-controller-ready' }, '*');
+                return;
+            }
+
             if (event.data.type !== 'transform-text') return;
-            
             await this.handleTransform(event.data.text || window.getSelection().toString());
         });
+
+        // Announce readiness so the content script knows Ctrl+Q will work
+        window.postMessage({ type: 'transform-controller-ready' }, '*');
     }
 
     async getRules() {
