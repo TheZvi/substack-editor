@@ -26,29 +26,6 @@ if (!window.RuleStorage) {
                 this.getUserRules(),
                 this.getOverrides()
             ]);
-        
-            console.log("Detailed rule comparison:", {
-                defaultRule: defaultRules.find(r => r.target === "Battle of the Board"),
-                userRule: userRules.find(r => r.target === "Battle of the Board")
-            });
-            console.log("Super detailed rule comparison:", {
-                defaultRule: defaultRules.find(r => r.target === "Battle of the Board") && {
-                    target: defaultRules.find(r => r.target === "Battle of the Board").target,
-                    url: defaultRules.find(r => r.target === "Battle of the Board").url,
-                    matchType: defaultRules.find(r => r.target === "Battle of the Board").matchType,
-                    wholeWord: defaultRules.find(r => r.target === "Battle of the Board").wholeWord
-                },
-                userRule: userRules.find(r => r.target === "Battle of the Board") && {
-                    target: userRules.find(r => r.target === "Battle of the Board").target,
-                    url: userRules.find(r => r.target === "Battle of the Board").url,
-                    matchType: userRules.find(r => r.target === "Battle of the Board").matchType,
-                    wholeWord: userRules.find(r => r.target === "Battle of the Board").wholeWord
-                }
-            });
-        
-            // Additional logging for all instances where it should match
-            console.log("All 'Battle of the Board' occurrences in text:", 
-                document.body.innerText.match(/Battle of the Board/g));
 
             return {
                 defaultRules: defaultRules.map(rule => ({

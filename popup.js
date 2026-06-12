@@ -349,22 +349,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(formatResult?.[0]?.result?.error || 'Failed to format content');
             }
 
-            // Add this debug section
-            console.log("Verifying stored content before opening WordPress");
+            // Verify the formatter stored content before opening WordPress
             const storedContent = await chrome.storage.local.get('wordpress_formatted_content');
             console.log("Stored content check:", {
                 hasData: !!storedContent.wordpress_formatted_content,
-                dataKeys: storedContent.wordpress_formatted_content ? Object.keys(storedContent.wordpress_formatted_content) : null
-            });
-
-            // Add this verification
-            console.log("Verifying content before opening WordPress");
-            const verifyContent = await chrome.storage.local.get('wordpress_formatted_content');
-            console.log("Content verification:", {
-                hasData: !!verifyContent.wordpress_formatted_content,
-                dataKeys: verifyContent.wordpress_formatted_content ? Object.keys(verifyContent.wordpress_formatted_content) : null,
-                titleLength: verifyContent.wordpress_formatted_content?.title?.length,
-                contentLength: verifyContent.wordpress_formatted_content?.content?.length
+                titleLength: storedContent.wordpress_formatted_content?.title?.length,
+                contentLength: storedContent.wordpress_formatted_content?.content?.length
             });
 
             // Step 3: Open WordPress and monitor tab
@@ -376,13 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             await new Promise(resolve => setTimeout(resolve, 2000));
 
-            console.log("About to query for WordPress tab");
             const allTabs = await chrome.tabs.query({});
-            console.log("All tabs after opening WordPress:", allTabs.map(t => ({
-                url: t.url,
-                active: t.active,
-                status: t.status
-            })));
 
             // Try to find WordPress tab
             const wpTab = allTabs.find(t =>
@@ -410,15 +394,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         attempts++;
                     }
                 }
-
-                console.log("WordPress tab is ready, verifying content still exists");
-                const finalCheck = await chrome.storage.local.get('wordpress_formatted_content');
-                console.log("Final content check:", {
-                    hasData: !!finalCheck.wordpress_formatted_content,
-                    dataKeys: finalCheck.wordpress_formatted_content ? Object.keys(finalCheck.wordpress_formatted_content) : null,
-                    titleLength: finalCheck.wordpress_formatted_content?.title?.length,
-                    contentLength: finalCheck.wordpress_formatted_content?.content?.length
-                });
 
                 try {
                     console.log("Injecting receiver script into WordPress tab");
@@ -553,14 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await new Promise(resolve => setTimeout(resolve, 2000));
 
                 // Find the Twitter tab
-                console.log("Looking for Twitter tab");
                 const allTabs = await chrome.tabs.query({});
-                console.log("All tabs after opening Twitter:", allTabs.map(t => ({
-                    url: t.url,
-                    active: t.active,
-                    status: t.status
-                })));
-
                 const twitterTab = allTabs.find(t =>
                     t.url &&
                     t.url.includes('x.com') &&

@@ -51,11 +51,6 @@ window.extractSubstackContent = async function() {
             'extracted_content': extractedContent
         });
 
-        // Verify storage was updated
-        const verification = await chrome.storage.local.get('extracted_content');
-        console.log("Storage verification - stored title:", verification.extracted_content?.title);
-        console.log("Storage verification - stored URL:", verification.extracted_content?.metadata?.sourceUrl);
-
         return {
             success: true,
             contentInfo: {

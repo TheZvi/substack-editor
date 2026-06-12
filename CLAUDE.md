@@ -43,8 +43,7 @@ substack-editor/
 │
 ├── receivers/
 │   ├── wordpress-receiver.js         # Inserts content into WordPress editor
-│   ├── twitter-receiver.js           # Inserts content into Twitter Articles editor
-│   └── googledoc-receiver.js         # Receives content in Google Docs
+│   └── twitter-receiver.js           # Inserts content into Twitter Articles editor (incl. newline fixing)
 │
 ├── twitter/
 │   ├── twitter-shortcuts.js          # Tweet copy shortcuts (Alt+A, Alt+C, etc.)
@@ -71,12 +70,10 @@ substack-editor/
 ├── shared/
 │   ├── llm/
 │   │   ├── api/
-│   │   │   ├── base-api.js           # Abstract LLM base class
+│   │   │   ├── base-api.js           # LLM base class (page context, loaded by content.js)
+│   │   │   ├── llm-api.js            # LLM base class (popup context, loaded by popup.html)
 │   │   │   ├── gemini_api.js         # Google Gemini implementation
-│   │   │   ├── claude_api.js         # Anthropic Claude implementation
-│   │   │   ├── claude-api.js         # Alternative Claude implementation
-│   │   │   ├── api-factory.js        # Factory pattern for API selection
-│   │   │   ├── llm-api.js            # Additional LLM interface
+│   │   │   ├── claude_api.js         # Anthropic Claude implementation (transform path; not working)
 │   │   │   └── default-rules.json    # Default transformation rules
 │   │   └── config/
 │   │       ├── api-keys.template.js  # API key config template
@@ -206,10 +203,7 @@ The extension works with Substack's ProseMirror editor. Key considerations:
 - Walk TextNodes for linkification to preserve structure
 
 ### Debugging
-Extensive console logging exists throughout (marked `// todo remove`):
-```javascript
-console.log("Content script loading"); // todo remove
-```
+Console logging uses bracketed prefixes for filtering in DevTools, e.g. `[Quote Copy]`, `[Smart Paste]`, `[Twitter List Sync]`, `[Review]`, `[Google Docs API]`. Keep error logging (`console.error`) and diagnostics useful for debugging live DOM breakage; avoid chatty per-keystroke or full-content dumps.
 
 ## Key Files to Understand
 
@@ -227,8 +221,7 @@ console.log("Content script loading"); // todo remove
 ## Known Issues
 
 1. **Ctrl+Q shortcut sometimes requires page reload** - Chrome command registration timing issue
-2. **Claude API not working** - Integration incomplete (README notes this)
-3. **Debug logging throughout** - Many `console.log` statements marked for removal
+2. **Claude API not working for text transform** - The Ctrl+Q transform path runs in page context where Claude API calls are blocked by CORS. Note: Claude IS used successfully for Google Doc review (runs from the popup, which is extension context)
 
 ### Twitter Article Posting Issues
 4. **Manual paste required for article body** - User must Ctrl+V to paste main content. UNFIXABLE: Browser security prevents programmatic paste, and direct DOM insertion breaks Twitter's editor state.
@@ -710,9 +703,9 @@ Google Docs' Find feature only **highlights** text, it doesn't **select** it. Co
 ## Common Tasks
 
 ### Adding a New LLM Provider
-1. Create new class in `shared/llm/api/` extending `LLMApi` or `base-api.js`
+1. Create new class in `shared/llm/api/` extending `LLMApi` (base-api.js for page context, llm-api.js for popup)
 2. Implement `transformText()` method
-3. Register in `api-factory.js`
+3. Load it where needed (manifest.json web_accessible_resources + content.js loadTransformScripts, or popup.html script tag)
 4. Add API key field in options page
 
 ### Adding New Linkify Rules
@@ -772,7 +765,7 @@ The extension requires access to:
 - `https://generativelanguage.googleapis.com/*` - Gemini API
 - `https://x.com/*`, `https://*.x.com/*`, `https://pro.x.com/*` - Twitter/X
 - `https://substackcdn.com/*`, `https://*.substackcdn.com/*` - Substack CDN (images)
-- `https://docs.google.com/*` - Google Docs (for receiver script)
+- `https://docs.google.com/*` - Google Docs
 - `https://www.googleapis.com/*`, `https://oauth2.googleapis.com/*` - Google APIs
 
 ## Chrome Permissions

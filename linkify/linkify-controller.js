@@ -24,40 +24,20 @@ async function loadRules() {
 
 // Process a single rule against the content
 function processRule(contentElement, rule, ruleIndex, linkResults) {
-    // Only log rules we care about
-    const isTestRule = rule.target.includes("Battle of the Board") || 
-                      rule.target === "Asymmetric Justice";
-                      
-    if (isTestRule) {
-        console.log("Starting to process rule:", {
-            target: rule.target,
-            numTextNodes: findTextNodes(contentElement).length,
-            contentElement: !!contentElement
-        });
-    }
-    
     // Keep processing until no more matches are found
     let keepSearching = true;
     while (keepSearching) {
         keepSearching = false;
         const textNodes = findTextNodes(contentElement);
-        
+
         // Look through each text node for a single match
         for (let node of textNodes) {
             if (isInsideLink(node)) continue;
-            
+
             const matches = findMatches(node.textContent, rule);
             if (matches.length > 0) {
                 // Only process the first match we find, then start over
                 const match = matches[0];
-                // Only log matches for rules we care about during current debug TODO remove
-                if (rule.target.includes("Battle of the Board") || 
-                    rule.target === "Asymmetric Justice") {
-                    console.log("Processing match:", {
-                        text: match.text,
-                        nodeContent: node.textContent
-                    });
-                }
                 createLink(node, match, rule, ruleIndex);
                 linkResults.push({
                     text: match.text,
@@ -101,48 +81,21 @@ function isInsideLink(node) {
 
 // Helper to find matches in text based on rule
 function findMatches(text, rule) {
-    const isTestRule = rule.target.includes("Battle of the Board") || 
-                      rule.target === "Asymmetric Justice";
-                      
-    if (isTestRule) {
-        console.log("Starting findMatches with:", {
-            text: text.substring(0, 50) + "...",
-            ruleTarget: rule.target,
-            ruleType: rule.matchType,
-            wholeWord: rule.wholeWord
-        });
-    }
-    
     const matches = [];
-    let searchText = rule.matchType === 'caseInsensitive' ? 
+    let searchText = rule.matchType === 'caseInsensitive' ?
         text.toLowerCase() : text;
-    let targetText = rule.matchType === 'caseInsensitive' ? 
+    let targetText = rule.matchType === 'caseInsensitive' ?
         rule.target.toLowerCase() : rule.target;
-
-        if (isTestRule) {
-            console.log("Processed text:", {
-                searchText: searchText.substring(0, 50) + "...",
-                targetText: targetText
-            }); 
-        }
 
     let startPos = 0;
     while (true) {
         const index = searchText.indexOf(targetText, startPos);
         if (index === -1) break;
 
-        console.log(`Found potential match at position ${index}`);
-
         if (rule.wholeWord) {
             const beforeChar = index === 0 ? ' ' : searchText[index - 1];
-            const afterChar = index + targetText.length >= searchText.length ? 
+            const afterChar = index + targetText.length >= searchText.length ?
                 ' ' : searchText[index + targetText.length];
-            
-            console.log("Checking whole word:", {
-                beforeChar,
-                afterChar,
-                isValid: !/\w/.test(beforeChar) && !/\w/.test(afterChar)
-            });
 
             if (!/\w/.test(beforeChar) && !/\w/.test(afterChar)) {
                 matches.push({
@@ -150,7 +103,6 @@ function findMatches(text, rule) {
                     end: index + targetText.length,
                     text: text.slice(index, index + targetText.length)
                 });
-                console.log("Match added");
             }
         } else {
             matches.push({
@@ -158,28 +110,17 @@ function findMatches(text, rule) {
                 end: index + targetText.length,
                 text: text.slice(index, index + targetText.length)
             });
-            console.log("Match added (no whole word check)");
         }
 
         startPos = index + 1;
     }
 
-    if (matches.length > 0 && isTestRule) {
-        console.log("Returning matches:", matches);
-    }
     return matches;
 }
 
 // Create a link from matched text
 function createLink(node, match, rule, ruleIndex) {
     try {
-        console.log("Creating link with:", {
-            text: match.text,
-            url: rule.url,
-            hoverText: rule.hoverText,
-            newTab: rule.newTab
-        });
-
         const range = document.createRange();
         if (match.start > node.textContent.length || match.end > node.textContent.length) {
             console.error("Invalid range, skipping");
@@ -200,13 +141,10 @@ function createLink(node, match, rule, ruleIndex) {
 
         link.setAttribute('target', '_blank');
         link.setAttribute('data-auto-linked', 'true');
-        link.setAttribute('data-rule-index', ruleIndex.toString());        
-        
-        console.log("Link element before insertion:", link.outerHTML);
+        link.setAttribute('data-rule-index', ruleIndex.toString());
+
         range.deleteContents();
         range.insertNode(link);
-
-        console.log("Link element after insertion:", link.parentElement.innerHTML);
     } catch (error) {
         console.error("Error creating link:", error);
     }

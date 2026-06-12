@@ -67,11 +67,6 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://docs.google.com/document/*"],
-      "js": ["receivers/googledoc-receiver.js"],
-      "run_at": "document_idle"
-    },
-    {
       "matches": ["http://*/*", "https://*/*"],
       "exclude_matches": [
         "https://x.com/*",
@@ -90,8 +85,6 @@
       "formatters/twitter-formatter.js",
       "receivers/wordpress-receiver.js",
       "receivers/twitter-receiver.js",
-      "receivers/twitter-newline-fixer.js",
-      "receivers/googledoc-receiver.js",
       "twitter/twitter-list-sync.js",
       "twitter/twitter-shortcuts.js",
       "linkify/default-rules.json",

@@ -69,6 +69,3 @@ ${text}`;
 
 window.LLMApi = LLMApi;
 console.log("LLMApi base class loaded");
-console.log("LLMApi class defined:", typeof LLMApi);
-console.log("Window.LLMApi:", typeof window.LLMApi); 
-console.log("Window.LLMApi:", typeof window.LLMApi); 

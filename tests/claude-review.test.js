@@ -1,5 +1,5 @@
-// Test script for Claude document review
-// Run with: node test-claude-review.js YOUR_API_KEY
+// Integration test for Claude document review (makes live API calls)
+// Run with: node tests/claude-review.test.js YOUR_API_KEY
 // Or set ANTHROPIC_API_KEY environment variable
 
 const CLAUDE_MODEL = 'claude-opus-4-5-20251101';

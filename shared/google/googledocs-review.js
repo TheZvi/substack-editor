@@ -3,7 +3,7 @@
 // Comments added via Google Drive API (not anchored, but include location context)
 
 const REVIEW_GEMINI_MODEL = 'gemini-3.1-flash-lite';
-const REVIEW_CLAUDE_MODEL = 'claude-opus-4-5-20251101';  // Opus 4.5
+const REVIEW_CLAUDE_MODEL = 'claude-opus-4-5-20251101';  // Default; overridden by 'claude-model' in storage (options page)
 
 /**
  * Format a comment with location context since API comments can't be anchored
@@ -137,8 +137,9 @@ async function reviewGoogleDoc(documentId, statusCallback = console.log) {
     statusCallback(`Analyzing ${text.length} characters across ${paragraphs.length} paragraphs (${quotedCount} quoted)...`);
 
     // Step 2: Get API keys from storage - prefer Claude if available
-    const storage = await chrome.storage.local.get(['gemini-api-key', 'gemini-model', 'claude-api-key']);
+    const storage = await chrome.storage.local.get(['gemini-api-key', 'gemini-model', 'claude-api-key', 'claude-model']);
     const claudeApiKey = storage['claude-api-key'];
+    const claudeModel = storage['claude-model'] || REVIEW_CLAUDE_MODEL;
     const geminiApiKey = storage['gemini-api-key'];
     const geminiModel = storage['gemini-model'] || REVIEW_GEMINI_MODEL;
 
@@ -147,9 +148,9 @@ async function reviewGoogleDoc(documentId, statusCallback = console.log) {
     // Step 3: Send to Claude (preferred) or Gemini for comprehensive analysis
     // Use markedText which includes [QUOTED SECTION] markers
     if (claudeApiKey) {
-        statusCallback(`Sending to Claude Opus 4.5 for comprehensive review...`);
-        console.log('[Review] Using Claude Opus 4.5');
-        issues = await analyzeTextWithClaude(markedText, claudeApiKey, statusCallback);
+        statusCallback(`Sending to ${claudeModel} for comprehensive review...`);
+        console.log('[Review] Using Claude:', claudeModel);
+        issues = await analyzeTextWithClaude(markedText, claudeApiKey, statusCallback, claudeModel);
     } else if (geminiApiKey) {
         statusCallback(`Sending to ${geminiModel} for comprehensive review...`);
         console.log('[Review] Using Gemini:', geminiModel);
@@ -429,13 +430,14 @@ ${text}`;
 }
 
 /**
- * Analyze text comprehensively using Claude Opus 4.5
+ * Analyze text comprehensively using Claude
  * @param {string} text - The text to analyze
  * @param {string} apiKey - Claude API key
  * @param {function} statusCallback - Callback for status updates
+ * @param {string} model - Claude model ID (defaults to REVIEW_CLAUDE_MODEL)
  * @returns {Promise<Array>} Array of issues found
  */
-async function analyzeTextWithClaude(text, apiKey, statusCallback = console.log) {
+async function analyzeTextWithClaude(text, apiKey, statusCallback = console.log, model = REVIEW_CLAUDE_MODEL) {
     // Trim whitespace from API key (common copy/paste issue)
     apiKey = apiKey.trim();
     const prompt = `You are a thorough copy editor reviewing a document. Find ALL errors and issues.
@@ -496,7 +498,7 @@ ${text}`;
             'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-            model: REVIEW_CLAUDE_MODEL,
+            model: model,
             max_tokens: 16384,
             messages: [{
                 role: 'user',
@@ -524,19 +526,15 @@ ${text}`;
         } else if (response.status === 400) {
             throw new Error('Invalid request to Claude API. Document may be too long.');
         } else if (response.status === 404) {
-            throw new Error(`Claude model not found. Model: ${REVIEW_CLAUDE_MODEL}`);
+            throw new Error(`Claude model not found. Model: ${model}`);
         }
 
         throw new Error(`Claude API error: ${response.status} - ${errorBody}`);
     }
 
     const data = await response.json();
-    console.log('[Review] Claude response received');
-    console.log('[Review] Full API response:', JSON.stringify(data, null, 2));
-
     const responseText = data?.content?.[0]?.text || '';
-    console.log('[Review] Response text length:', responseText.length);
-    console.log('[Review] Raw response text:', responseText.substring(0, 500));
+    console.log('[Review] Claude response received, text length:', responseText.length);
 
     if (!responseText) {
         console.error('[Review] No response text from Claude!');

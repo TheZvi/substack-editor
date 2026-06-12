@@ -1,13 +1,4 @@
 // background.js
-chrome.runtime.onInstalled.addListener(async (details) => {
-  if (details.reason === 'install') {
-      console.log('First install - initializing storage');
-      // Set up initial storage if needed
-  } else if (details.reason === 'update') {
-      console.log('Extension updated - checking if storage needs migration');
-      // Handle any needed storage format changes
-  }
-});
 
 // Handle context menu creation
 chrome.runtime.onInstalled.addListener(() => {
@@ -21,16 +12,13 @@ chrome.runtime.onInstalled.addListener(() => {
 // Menu clicker
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "transformText") {
-      console.log("Context menu clicked, transforming text."); // todo remove
       chrome.tabs.sendMessage(tab.id, {
           action: "transformText",
           text: info.selectionText
       }, (response) => {
           if (chrome.runtime.lastError) {
-              console.log("Error sending message:", chrome.runtime.lastError);
-              return;
+              console.error("Error sending transform message:", chrome.runtime.lastError);
           }
-          console.log("Transform message sent successfully:", response);
       });
   }
 });
@@ -38,15 +26,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 // Handle keyboard command
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === "transform-text") {
-      console.log("Keyboard command detected, transforming text."); // todo remove
       chrome.tabs.sendMessage(tab.id, {
           action: "transformText"
       }, (response) => {
           if (chrome.runtime.lastError) {
-              console.log("Error sending message:", chrome.runtime.lastError);
-              return;
+              console.error("Error sending transform message:", chrome.runtime.lastError);
           }
-          console.log("Transform message sent successfully:", response);
       });
   }
 });
@@ -54,9 +39,6 @@ chrome.commands.onCommand.addListener((command, tab) => {
 // ============================================================================
 // SPA Navigation Detection - Inject content scripts on client-side navigation
 // ============================================================================
-
-// Track which tabs have had content scripts injected to avoid duplicates
-const injectedTabs = new Set();
 
 // Listen for SPA-style navigation (history state changes without full page reload)
 chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
@@ -90,17 +72,6 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
 }, {
   url: [{ hostSuffix: '.substack.com' }]
 }); 
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "showNotification") {
-      chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon48.png',  // Make sure this icon exists
-          title: 'API Key Required',
-          message: request.message
-      });
-  }
-});
 
 // Handle image fetch requests from content scripts (bypasses CORS)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -388,12 +359,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'create-googledoc-comment') {
     createGoogleDocComment(request.documentId, request.commentText)
-      .then(result => sendResponse(result))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep channel open for async
-  }
-  if (request.action === 'read-googledoc') {
-    readGoogleDocContent(request.documentId)
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true; // Keep channel open for async

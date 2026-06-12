@@ -578,7 +578,7 @@ document.addEventListener('keydown', (e) => {
  * @param {string} authorName - Display name to match
  * @param {string|null} handle - Not used for universal copy (no handle available)
  * @param {boolean} isTwitter - Always false for universal copy
- * @returns {Promise<string|null>} The annotation info text, or null
+ * @returns {Promise<{info: string, nameToShow: string|undefined}|null>} Annotation data, or null
  */
 async function getAuthorAnnotation(authorName, handle, isTwitter) {
     try {
@@ -684,7 +684,9 @@ async function copySelectedQuote() {
     const infoText = annotationInfo ? ` (${escapeHtml(annotationInfo)})` : '';
 
     // Build the quote - use selection HTML to preserve formatting (bullets, bold, etc.)
-    const authorPrefix = `<a href="${url}">${escapeHtml(displayName)}</a>${infoText}: `;
+    // Escape the URL for safe use inside the href attribute (& and " in particular)
+    const safeUrl = escapeHtml(url).replace(/"/g, '&quot;');
+    const authorPrefix = `<a href="${safeUrl}">${escapeHtml(displayName)}</a>${infoText}: `;
     const contentHtml = selectedHtml || escapeHtml(selectedText);
     const html = authorPrefix + contentHtml;
     const plainText = `${displayName}${annotationInfo ? ` (${annotationInfo})` : ''}: ${selectedText}`;
@@ -1094,7 +1096,7 @@ function detectPageAuthor() {
         }
     }
 
-    // 2. JSON-LD structured data
+    // 3. JSON-LD structured data
     const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
     for (const script of jsonLdScripts) {
         try {
@@ -1106,7 +1108,7 @@ function detectPageAuthor() {
         }
     }
 
-    // 3. Common DOM selectors for bylines
+    // 4. Common DOM selectors for bylines
     const bylineSelectors = [
         '.author-name',
         '.byline-name',
@@ -1143,7 +1145,7 @@ function detectPageAuthor() {
         }
     }
 
-    // 4. Substack-specific
+    // 5. Substack-specific
     const substackAuthor = document.querySelector('.byline-content .profile-name');
     if (substackAuthor?.textContent?.trim()) {
         return cleanAuthorName(substackAuthor.textContent);

@@ -1,7 +1,5 @@
 // features/text-transform/transform-controller.js
 
-console.log("Transform controller loading"); // todo remove
-
 class TransformController {
     constructor() {
         this.api = new window.GeminiApi();
@@ -286,17 +284,17 @@ class TransformController {
                 throw new Error("No API key found");
             }
 
-            const rules = await this.getRules();
-
             // Pre-convert numbered lists to HTML BEFORE sending to LLM
             // This ensures the list structure is preserved through LLM transformation
             processedText = this.convertNumberedListsToHtml(processedText);
 
-            // Add rule to preserve HTML links, lists and other critical elements
-            rules.unshift({
+            // Prepend rule to preserve HTML links, lists and other critical elements.
+            // Build a new array - mutating the shared rules array would add a
+            // duplicate copy of this rule on every transform in the session.
+            const rules = [{
                 priority: -1,
                 description: "MOST IMPORTANT: Preserve these exactly: 1) All acronyms 'ASI', 'AGI', 'AI', 'GPT', 'LLM', 'NLP' must stay as acronyms 2) All quote marks must stay exactly as they are (don't change ' to \" or vice versa) 3) ALL HTML anchor tags <a href=\"...\">text</a> must be preserved exactly with their URLs intact 4) ALL HTML ordered list tags <ol><li>...</li></ol> must be preserved exactly - do not convert them to plain text"
-            });
+            }, ...(await this.getRules())];
 
             const transformedText = await this.api.transformText(processedText, apiKey, rules);
 
@@ -389,4 +387,4 @@ class TransformController {
     }
 }
 
-window.transformController = new TransformController();console.log("Transform controller loaded"); // todo remove
+window.transformController = new TransformController();

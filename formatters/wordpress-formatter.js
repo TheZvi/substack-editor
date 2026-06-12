@@ -32,19 +32,9 @@ window.formatForWordPress = async function() {
                 formatTimestamp: Date.now()
             }
         });
-        console.log("Verifying storage after formatting:", {
+        console.log("WordPress content stored:", {
             titleLength: cleanTitle?.length,
-            titleFull: cleanTitle,
-            unformattedTitle: title,
-            content: content?.length
-        });
-        chrome.storage.local.get('wordpress_formatted_content', function(data) {
-            console.log("Immediate storage verification:", {
-                hasData: !!data.wordpress_formatted_content,
-                dataKeys: data.wordpress_formatted_content ? Object.keys(data.wordpress_formatted_content) : null,
-                titleLength: data.wordpress_formatted_content?.title?.length,
-                contentLength: data.wordpress_formatted_content?.content?.length
-            });
+            contentLength: content?.length
         });
         return { success: true };
     } catch (error) {

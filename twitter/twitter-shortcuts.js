@@ -618,7 +618,7 @@ async function openAnnotationForCurrentTweet() {
  * @param {string} authorName - Display name to match
  * @param {string|null} handle - Twitter @handle (with or without @)
  * @param {boolean} isTwitter - Whether we're on a Twitter page
- * @returns {Promise<string|null>} The annotation info text, or null
+ * @returns {Promise<{info: string, nameToShow: string|undefined}|null>} Annotation data, or null
  */
 async function getAuthorAnnotation(authorName, handle, isTwitter) {
     try {

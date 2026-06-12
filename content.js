@@ -1,13 +1,14 @@
-// content.js - update existing file
-
-console.log("Content script loading"); // todo remove
+// content.js
 
 // Prevent duplicate initialization if script is injected multiple times
+// (e.g. by the SPA-navigation handler in background.js). The IIFE lets us
+// return early so listeners are never registered twice.
+(() => {
 if (window.__substackEditorContentScriptLoaded) {
-    console.log("Content script already loaded, skipping initialization");
-} else {
-    window.__substackEditorContentScriptLoaded = true;
+    console.log("[Content] Already loaded, skipping initialization");
+    return;
 }
+window.__substackEditorContentScriptLoaded = true;
 
 // Listen for messages from the extension
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -30,22 +31,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Handle communication between page scripts and chrome.storage
 window.addEventListener('message', async (event) => {
-   console.log("Content script received message:", event.data);
    if (event.source !== window) return;
-   
+
    if (event.data.type === 'get-api-key') {
-       const result = await chrome.storage.local.get(null);
-       console.log('All stored keys:', Object.keys(result));
-       
        const keyMap = {
            'gemini-api-key': 'gemini-api-key',
            'claude-api-key': 'claude-api-key'
        };
-       
+
        const storageKey = keyMap[event.data.service];
+       const result = await chrome.storage.local.get(storageKey);
        const apiKey = result[storageKey];
-       console.log('Retrieving API key for:', event.data.service, 'using storage key:', storageKey);
-       
+
        window.postMessage({
            type: 'api-key-response',
            key: apiKey,
@@ -143,13 +140,8 @@ function setupBlockquoteListener(editor) {
         // Only care about space key
         if (e.key !== ' ' && e.code !== 'Space') return;
 
-        console.log("[Blockquote] Space pressed, checking for '>' trigger");
-
         const selection = window.getSelection();
-        if (!selection.rangeCount) {
-            console.log("[Blockquote] No selection range");
-            return;
-        }
+        if (!selection.rangeCount) return;
 
         const range = selection.getRangeAt(0);
         let node = range.startContainer;
@@ -164,12 +156,10 @@ function setupBlockquoteListener(editor) {
             cursorPos = text.length;
             node = node.firstChild;
         } else {
-            console.log("[Blockquote] Node is not text:", node.nodeType, node.nodeName);
             return;
         }
 
         const textBeforeCursor = text.substring(0, cursorPos);
-        console.log("[Blockquote] Text before cursor:", JSON.stringify(textBeforeCursor));
 
         // Check if text before cursor is ">" at start of line (markdown blockquote syntax)
         if (textBeforeCursor === '>') {
@@ -379,8 +369,6 @@ async function smartPaste(editor) {
         // Also try to extract images from HTML content (e.g., from tweets)
         let htmlImageUrls = [];
         if (htmlContent) {
-            console.log("[Smart Paste] Full HTML content:", htmlContent);
-
             // Try multiple patterns for finding images
             const patterns = [
                 // Standard img src
@@ -778,17 +766,13 @@ function showCopyNotification(message, isError = false) {
     setTimeout(() => notification.remove(), 2000);
 }
 
-// Initialize when DOM is ready (but only once)
-if (!window.__substackEditorInitialized) {
-    window.__substackEditorInitialized = true;
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initBlockquoteOverride);
-    } else {
-        initBlockquoteOverride();
-    }
-
-    console.log("Content script loaded"); // todo remove
+// Initialize when DOM is ready (duplicate injection is prevented by the
+// __substackEditorContentScriptLoaded guard at the top of this file)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBlockquoteOverride);
 } else {
-    console.log("Content script already initialized, skipping"); // todo remove
+    initBlockquoteOverride();
 }
+
+console.log("[Content] Substack editor content script loaded");
+})();
