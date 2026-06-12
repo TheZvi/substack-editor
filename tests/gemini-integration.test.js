@@ -9,7 +9,7 @@
  *     Create .gemini-test-config.json in the project root:
  *     {
  *       "apiKey": "your-api-key-here",
- *       "model": "gemini-2.0-flash-lite"
+ *       "model": "gemini-3.1-flash-lite"
  *     }
  *
  *   Option 2 - Environment variable:
@@ -40,7 +40,7 @@ try {
 }
 
 const GEMINI_API_KEY = configFromFile.apiKey || process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = configFromFile.model || process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
+const GEMINI_MODEL = configFromFile.model || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
 
 // Test utilities
 let testsPassed = 0;
@@ -215,7 +215,7 @@ async function runTests() {
         console.log('  Create .gemini-test-config.json in the project root:');
         console.log('  {');
         console.log('    "apiKey": "your-api-key-here",');
-        console.log('    "model": "gemini-2.0-flash-lite"');
+        console.log('    "model": "gemini-3.1-flash-lite"');
         console.log('  }');
         console.log('');
         console.log('Option 2 - Environment variable:');

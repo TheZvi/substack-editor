@@ -990,7 +990,7 @@ function generateTOC(postUrl) {
             .filter(header => header.textContent.trim() !== "");
 
         // Filter out interface titles
-        const cutoffTitles = ["Preview post", "Post info", "Post settings", "Publish", "Heads up!"];
+        const cutoffTitles = ["Preview post", "Post info", "Post settings", "Publish", "Heads up!", "Media settings"];
         const cutoffIndex = headersArray.findIndex(header =>
             cutoffTitles.includes(header.textContent.trim())
         );

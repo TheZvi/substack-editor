@@ -2,7 +2,7 @@
 // Version 2.1: Full review (spelling, grammar, clarity, structure, rhetoric, factual, edits)
 // Comments added via Google Drive API (not anchored, but include location context)
 
-const REVIEW_GEMINI_MODEL = 'gemini-2.0-flash';
+const REVIEW_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const REVIEW_CLAUDE_MODEL = 'claude-opus-4-5-20251101';  // Opus 4.5
 
 /**

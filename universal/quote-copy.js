@@ -588,7 +588,7 @@ async function getAuthorAnnotation(authorName, handle, isTwitter) {
 
         for (const ann of annotations) {
             if (ann.twitterOnly && !isTwitter) continue;
-            if (ann.name.toLowerCase() === nameLower) return ann.info;
+            if (ann.name.toLowerCase() === nameLower) return { info: ann.info, nameToShow: ann.nameToShow };
         }
     } catch (e) {
         console.error("[Quote Copy] Error looking up annotation:", e);
@@ -675,17 +675,19 @@ async function copySelectedQuote() {
     }
 
     // Look up annotation for this author, fall back to website annotation
-    let annotation = await getAuthorAnnotation(author, null, false);
-    if (!annotation) {
-        annotation = await getWebsiteAnnotation();
+    const authorAnnotation = await getAuthorAnnotation(author, null, false);
+    let annotationInfo = authorAnnotation?.info;
+    const displayName = authorAnnotation?.nameToShow || author;
+    if (!annotationInfo) {
+        annotationInfo = await getWebsiteAnnotation();
     }
-    const infoText = annotation ? ` (${escapeHtml(annotation)})` : '';
+    const infoText = annotationInfo ? ` (${escapeHtml(annotationInfo)})` : '';
 
     // Build the quote - use selection HTML to preserve formatting (bullets, bold, etc.)
-    const authorPrefix = `<a href="${url}">${escapeHtml(author)}</a>${infoText}: `;
+    const authorPrefix = `<a href="${url}">${escapeHtml(displayName)}</a>${infoText}: `;
     const contentHtml = selectedHtml || escapeHtml(selectedText);
     const html = authorPrefix + contentHtml;
-    const plainText = `${author}${annotation ? ` (${annotation})` : ''}: ${selectedText}`;
+    const plainText = `${displayName}${annotationInfo ? ` (${annotationInfo})` : ''}: ${selectedText}`;
 
     // Copy to clipboard
     try {
@@ -700,13 +702,13 @@ async function copySelectedQuote() {
         ]);
 
         console.log("[Quote Copy] Copied:", plainText.substring(0, 100) + "...");
-        showNotification(`Quote copied: ${author}`);
+        showNotification(`Quote copied: ${displayName}`);
     } catch (err) {
         console.error("[Quote Copy] Clipboard write failed:", err);
         // Fallback to plain text
         try {
             await navigator.clipboard.writeText(plainText);
-            showNotification(`Quote copied (text only): ${author}`);
+            showNotification(`Quote copied (text only): ${displayName}`);
         } catch (err2) {
             console.error("[Quote Copy] Fallback clipboard failed:", err2);
             showNotification("Failed to copy to clipboard", true);
@@ -767,7 +769,31 @@ function detectAuthor(range) {
         }
     }
 
-    // 2. Check if inside a comment
+    // 2a. LessWrong / EA Forum / Alignment Forum comment detection
+    // Each comment is wrapped in a div.comments-node; nesting is recursive.
+    // We find the innermost comments-node and get the first user link that belongs
+    // directly to it (not to a nested child comments-node).
+    const hostname = window.location.hostname;
+    if (hostname.includes('lesswrong.com') ||
+        hostname.includes('alignmentforum.org') ||
+        hostname.includes('forum.effectivealtruism.org')) {
+        const commentNode = container.closest('.comments-node');
+        if (commentNode) {
+            const userLinks = commentNode.querySelectorAll('a[href*="/users/"]');
+            for (const link of userLinks) {
+                // Ensure this link belongs to THIS comment frame, not a nested reply
+                if (link.closest('.comments-node') === commentNode) {
+                    const text = link.textContent?.trim();
+                    if (text && text.length > 1 && text.length < 50) {
+                        console.log("[Quote Copy] Found LessWrong comment author:", text);
+                        return cleanAuthorName(text);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2b. Check if inside a comment (generic)
     const comment = findCommentContainer(container);
     if (comment) {
         const author = detectCommentAuthor(comment);
@@ -834,7 +860,9 @@ function detectBlockquoteAuthor(blockquote) {
 function findCommentContainer(element) {
     // Look for common comment container patterns
     const commentSelectors = [
-        // Substack-specific (check first)
+        // Site-specific (check first for accuracy)
+        'article.blog-comment',  // Marginal Revolution
+        // Substack-specific
         '[class*="comment-content"]',
         '[class*="comment-body"]',
         '[data-testid="comment"]',
@@ -845,7 +873,6 @@ function findCommentContainer(element) {
         '[data-comment]',
         '[data-testid*="comment"]',
         '.reply',
-        '.post',  // Reddit-style
         '.thing', // Old Reddit
         '.athing', // Hacker News
     ];
@@ -895,6 +922,8 @@ function detectCommentAuthor(commentContainer) {
 
     // Common selectors for comment authors
     const authorSelectors = [
+        // Site-specific (check first for accuracy)
+        'h3.comment-author',  // Marginal Revolution
         '.author',
         '.comment-author',
         '.commenter',
@@ -933,6 +962,54 @@ function detectCommentAuthor(commentContainer) {
     return null;
 }
 
+// Rejects lines that look like a job title rather than a name, e.g. "Senior Reporter",
+// which can otherwise be misidentified as the byline when it sits just above "Published".
+const JOB_TITLE_PATTERN = /^(senior |staff |chief |managing |deputy |associate |assistant |contributing |executive |freelance |lead |principal )?(reporter|editor|writer|correspondent|columnist|journalist|contributor|producer|analyst|commentator|anchor|host)s?$/i;
+
+function isLikelyJobTitle(text) {
+    return JOB_TITLE_PATTERN.test(text.trim());
+}
+
+/**
+ * Extract a byline from raw innerText of the page body.
+ * Pure function (no DOM access) so it can be unit-tested directly.
+ * Returns the author string or null.
+ */
+function extractBylineFromBodyText(bodyText) {
+    if (!bodyText) return null;
+
+    // Prefer the explicit "By AuthorName" pattern first — it's more specific than
+    // "line before Published" and avoids grabbing subtitle lines like "Senior Reporter"
+    // that appear between the byline and the publication date (e.g. sfstandard.com).
+    const earlyText = bodyText.substring(0, 3000);
+    const byLineMatch = earlyText.match(/\n[Bb]y ([^\n]{4,120})\s*\n/);
+    if (byLineMatch) {
+        const potentialByline = byLineMatch[1].trim();
+        const capWords = potentialByline.match(/\b[A-Z][a-z]+/g);
+        if (capWords && capWords.length >= 2 && /^[A-Z]/.test(potentialByline) &&
+            !isLikelyJobTitle(potentialByline)) {
+            return potentialByline;
+        }
+    }
+
+    // Fallback: line immediately before "Published" (common in news articles like FT).
+    // Handles: "Author Name", "Author1 and Author2", "Author1 and Author2 in Location".
+    const publishedMatch = bodyText.match(/\n([^\n]{4,120})\s*\n\s*Published/);
+    if (publishedMatch && publishedMatch[1]) {
+        let potentialByline = publishedMatch[1].trim();
+        potentialByline = potentialByline.replace(/\s+in\s+[A-Z][a-zA-Z\s,]+$/, '');
+        if (isLikelyJobTitle(potentialByline)) return null;
+        const words = potentialByline.split(/[\s,]+/).filter(w => w);
+        const capWords = words.filter(w => /^[A-Z]/.test(w));
+        const isLikelyName = words.length >= 2 && words.length <= 8 &&
+            capWords.length >= 2 &&
+            words.every(w => (/^[A-Z][a-zA-Z]/.test(w) && w.length <= 20) || /^(and|&)$/i.test(w));
+        if (isLikelyName) return potentialByline;
+    }
+
+    return null;
+}
+
 function detectPageAuthor() {
     // 0. Site-specific detection (check first for accuracy)
     const hostname = window.location.hostname;
@@ -947,12 +1024,15 @@ function detectPageAuthor() {
         const userLinks = document.querySelectorAll('a[href*="/users/"]');
         for (const link of userLinks) {
             const text = link.textContent?.trim();
-            // Skip navigation/menu items - look for links near the post header
-            // Check if this link is in the post header area (near the title, above the content)
+            // Skip navigation/menu items - the logged-in user's profile link
+            // appears in the site nav and must not be picked up as post author
+            if (link.closest('nav, [class*="Navigation"], [class*="navigation"], [class*="UsersMenu"], [class*="header-"]')) {
+                continue;
+            }
             const rect = link.getBoundingClientRect();
             // Author name should be in the top portion of the page and have reasonable length
             if (text && text.length > 1 && text.length < 50 && rect.top < 400) {
-                // Check if there's "by" text before this link
+                // Check if there's "by" text before this link or author-related class
                 const parent = link.parentElement;
                 const parentText = parent?.textContent || '';
                 if (parentText.toLowerCase().includes('by ') ||
@@ -961,8 +1041,8 @@ function detectPageAuthor() {
                     console.log("[Quote Copy] Found LessWrong author:", text);
                     return cleanAuthorName(text);
                 }
-                // Also check if this is clearly in an author context (first user link in header)
-                const postHeader = link.closest('[class*="PostsPageHeader"], [class*="post-header"], header');
+                // Check if in the post header area (NOT the site-wide header/nav)
+                const postHeader = link.closest('[class*="PostsPageHeader"], [class*="PostsAuthor"], [class*="post-header"], [class*="PostHeader"]');
                 if (postHeader) {
                     console.log("[Quote Copy] Found LessWrong header author:", text);
                     return cleanAuthorName(text);
@@ -985,7 +1065,15 @@ function detectPageAuthor() {
         }
     }
 
-    // 1. Meta tags
+    // 1. Text-based byline extraction — works on archive.is and sites with unusual markup
+    const bodyText = document.body?.innerText || '';
+    const textByline = extractBylineFromBodyText(bodyText);
+    if (textByline) {
+        console.log("[Quote Copy] Found byline in body text:", textByline);
+        return cleanAuthorName(textByline);
+    }
+
+    // 2. Meta tags
     const metaSelectors = [
         'meta[name="author"]',
         'meta[property="article:author"]',
@@ -998,6 +1086,10 @@ function detectPageAuthor() {
         const meta = document.querySelector(selector);
         const content = meta?.getAttribute('content');
         if (content?.trim()) {
+            // Skip URL values (e.g., article:author often contains author profile URL, not name)
+            if (content.trim().startsWith('http://') || content.trim().startsWith('https://')) {
+                continue;
+            }
             return cleanAuthorName(content);
         }
     }
@@ -1026,7 +1118,6 @@ function detectPageAuthor() {
         '.author',
         '.byline',
         'a[href*="/author/"]',
-        'a[href*="/@"]',      // Medium-style
         '.posted-by a',
         '[data-testid="authorName"]',
         '.article-author',
@@ -1038,6 +1129,10 @@ function detectPageAuthor() {
     for (const selector of bylineSelectors) {
         const el = document.querySelector(selector);
         if (el) {
+            // Skip elements inside comment sections (these are comment authors, not post authors)
+            if (el.closest('#comments, .comments, .comments-area, [class*="comment-list"], [id*="comments"], article.blog-comment')) {
+                continue;
+            }
             const text = el.textContent?.trim();
             if (text && text.length < 50 && text.length > 1) {
                 const cleaned = cleanAuthorName(text);
@@ -1077,8 +1172,14 @@ function extractAuthorFromJsonLd(data) {
             if (data.author.name) {
                 return cleanAuthorName(data.author.name);
             }
-            if (Array.isArray(data.author) && data.author[0]?.name) {
-                return cleanAuthorName(data.author[0].name);
+            if (Array.isArray(data.author)) {
+                const names = data.author
+                    .map(a => cleanAuthorName(a.name || (typeof a === 'string' ? a : '')))
+                    .filter(n => n);
+                if (names.length === 0) return null;
+                if (names.length === 1) return names[0];
+                if (names.length === 2) return `${names[0]} and ${names[1]}`;
+                return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
             }
         }
     }
@@ -1193,9 +1294,10 @@ function detectUrl(range) {
 
         // Generic comment permalink detection
         const permalinkSelectors = [
+            'a.permalink',               // Marginal Revolution (and generic)
+            'a[href*="commentID="]',     // Marginal Revolution query param style
             'a[href*="/comment/"]',
             'a[href*="#comment"]',
-            'a.permalink',
             'a[class*="permalink"]',
             'a[class*="timestamp"]',
             'time a',

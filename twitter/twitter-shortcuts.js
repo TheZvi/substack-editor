@@ -630,9 +630,9 @@ async function getAuthorAnnotation(authorName, handle, isTwitter) {
         for (const ann of annotations) {
             if (ann.twitterOnly && !isTwitter) continue;
             if (ann.handleMatch && isTwitter && cleanHandle) {
-                if (ann.handleMatch.toLowerCase() === cleanHandle) return ann.info;
+                if (ann.handleMatch.toLowerCase() === cleanHandle) return { info: ann.info, nameToShow: ann.nameToShow };
             }
-            if (ann.name.toLowerCase() === nameLower) return ann.info;
+            if (ann.name.toLowerCase() === nameLower) return { info: ann.info, nameToShow: ann.nameToShow };
         }
     } catch (e) {
         console.error("[Twitter Shortcuts] Error looking up annotation:", e);
@@ -659,10 +659,11 @@ async function copyCurrentTweet(includeAuthor = false) {
             // Use tweetData.html (with processed URLs) if available, otherwise fall back to text
             const tweetUrl = tweetData.url || window.location.href;
             const contentHtml = tweetData.html || tweetData.text;
-            const annotation = await getAuthorAnnotation(tweetData.authorName, tweetData.authorHandle, true);
-            const infoText = annotation ? ` (${annotation})` : '';
-            const html = `<a href="${tweetUrl}">${tweetData.authorName}</a>${infoText}: ${contentHtml}`;
-            const plainText = `${tweetData.authorName}${infoText}: ${tweetData.text}`;
+            const authorAnnotation = await getAuthorAnnotation(tweetData.authorName, tweetData.authorHandle, true);
+            const displayName = authorAnnotation?.nameToShow || tweetData.authorName;
+            const infoText = authorAnnotation?.info ? ` (${authorAnnotation.info})` : '';
+            const html = `<a href="${tweetUrl}">${displayName}</a>${infoText}: ${contentHtml}`;
+            const plainText = `${displayName}${infoText}: ${tweetData.text}`;
 
             // Copy as both HTML and plain text
             const blob = new Blob([html], { type: 'text/html' });
@@ -804,10 +805,11 @@ async function formatThread(tweets) {
 
             if (tweet.authorName) {
                 const tweetUrl = tweet.url || window.location.href;
-                const annotation = await getAuthorAnnotation(tweet.authorName, tweet.authorHandle, true);
-                const infoText = annotation ? ` (${annotation})` : '';
-                html += `<a href="${tweetUrl}">${tweet.authorName}</a>${infoText}: ${tweetHtml}`;
-                plainText += `${tweet.authorName}${infoText}: ${tweet.text}`;
+                const authorAnnotation = await getAuthorAnnotation(tweet.authorName, tweet.authorHandle, true);
+                const displayName = authorAnnotation?.nameToShow || tweet.authorName;
+                const infoText = authorAnnotation?.info ? ` (${authorAnnotation.info})` : '';
+                html += `<a href="${tweetUrl}">${displayName}</a>${infoText}: ${tweetHtml}`;
+                plainText += `${displayName}${infoText}: ${tweet.text}`;
                 lastAuthor = tweet.authorName;
             } else {
                 html += tweetHtml;

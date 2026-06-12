@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const localSettings = await chrome.storage.local.get({
         'gemini-api-key': '',
         'claude-api-key': '',
-        'gemini-model': 'gemini-2.0-flash',
+        'gemini-model': 'gemini-3.1-flash-lite',
         'claude-model': 'claude-opus-4-5-20251101'
     });
 
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     apiSelect.value = syncSettings.selectedApi;
     geminiKeyInput.value = localSettings['gemini-api-key'] || syncSettings.geminiKey || '';
     claudeKeyInput.value = localSettings['claude-api-key'] || syncSettings.claudeKey || '';
-    geminiModelSelect.value = localSettings['gemini-model'] || 'gemini-2.0-flash';
+    geminiModelSelect.value = localSettings['gemini-model'] || 'gemini-3.1-flash-lite';
     claudeModelSelect.value = localSettings['claude-model'] || 'claude-opus-4-5-20251101';
 
     // Show both API settings (both can be used - Claude preferred for doc review)

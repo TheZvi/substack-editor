@@ -75,6 +75,7 @@ async function loadAnnotations() {
 
     container.innerHTML = annotations.map((ann, index) => {
         const metaParts = [];
+        if (ann.nameToShow) metaParts.push(`shows as: ${ann.nameToShow}`);
         if (ann.handleMatch) metaParts.push(`@${ann.handleMatch.replace(/^@/, '')}`);
         if (ann.twitterOnly) metaParts.push('Twitter only');
 
@@ -302,6 +303,7 @@ async function openModal(editIndex) {
         const ann = annotations[editIndex];
         if (ann) {
             document.getElementById('ann-name').value = ann.name;
+            document.getElementById('ann-name-to-show').value = ann.nameToShow || '';
             document.getElementById('ann-info').value = ann.info;
             document.getElementById('ann-twitter-only').checked = !!ann.twitterOnly;
             document.getElementById('ann-handle').value = ann.handleMatch || '';
@@ -382,6 +384,7 @@ async function saveWebsiteFromForm() {
 
 async function saveFromForm() {
     const name = document.getElementById('ann-name').value.trim();
+    const nameToShow = document.getElementById('ann-name-to-show').value.trim();
     const info = document.getElementById('ann-info').value.trim();
     const twitterOnly = document.getElementById('ann-twitter-only').checked;
     const handleMatch = document.getElementById('ann-handle').value.trim().replace(/^@/, '');
@@ -394,6 +397,7 @@ async function saveFromForm() {
 
     const entry = {
         name,
+        nameToShow: nameToShow || undefined,
         info,
         twitterOnly,
         handleMatch: handleMatch

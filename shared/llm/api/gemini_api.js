@@ -1,7 +1,7 @@
 console.log("Starting to load GeminiApi...");
 
 // Default model - can be overridden via chrome.storage
-const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash-lite';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 class GeminiApi extends LLMApi {
     constructor(config = {}) {

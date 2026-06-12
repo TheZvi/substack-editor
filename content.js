@@ -660,11 +660,10 @@ async function toggleHeader4() {
         const currentStyle = styleButton.textContent?.trim().toLowerCase();
         console.log("[Header Toggle] Current style:", currentStyle);
 
-        // Click to open the dropdown
-        styleButton.click();
-
-        // Wait for dropdown to appear
-        await new Promise(resolve => setTimeout(resolve, 150));
+        // Open the dropdown - focus button and press Enter (click() doesn't work on new Substack editor)
+        styleButton.focus();
+        styleButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        styleButton.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
 
         // Determine target: toggle between Heading 4 and Paragraph/Body/Normal
         const isHeading4 = currentStyle?.includes('heading 4');
@@ -674,36 +673,45 @@ async function toggleHeader4() {
 
         console.log("[Header Toggle] Looking for:", targetStyles);
 
-        // Find the menu/dropdown options - search broadly
+        // Poll for dropdown options to appear (up to 1 second)
         let targetOption = null;
-        const allElements = document.querySelectorAll('button, [role="menuitem"], [role="option"], [role="listbox"] *, div, span, li');
+        const maxAttempts = 20;
+        const pollInterval = 50; // ms
 
-        for (const item of allElements) {
-            const itemText = item.textContent?.trim().toLowerCase();
-            // Check for exact match or close match
-            for (const target of targetStyles) {
-                if (itemText === target ||
-                    (target === 'heading 4' && itemText === 'heading 4') ||
-                    (normalTextOptions.includes(target) && normalTextOptions.includes(itemText))) {
-                    // Make sure it's clickable and visible
-                    const rect = item.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        targetOption = item;
-                        console.log("[Header Toggle] Found option:", itemText);
-                        break;
+        for (let attempt = 0; attempt < maxAttempts && !targetOption; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+            // Find the menu/dropdown options - search broadly
+            const allElements = document.querySelectorAll('button, [role="menuitem"], [role="option"], [role="listbox"] *, div, span, li');
+
+            for (const item of allElements) {
+                const itemText = item.textContent?.trim().toLowerCase();
+                // Check for exact match or close match
+                for (const target of targetStyles) {
+                    if (itemText === target ||
+                        (target === 'heading 4' && itemText === 'heading 4') ||
+                        (normalTextOptions.includes(target) && normalTextOptions.includes(itemText))) {
+                        // Make sure it's clickable and visible
+                        const rect = item.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            targetOption = item;
+                            console.log("[Header Toggle] Found option:", itemText, "after", (attempt + 1) * pollInterval, "ms");
+                            break;
+                        }
                     }
                 }
+                if (targetOption) break;
             }
-            if (targetOption) break;
         }
 
         if (targetOption) {
             console.log("[Header Toggle] Clicking:", targetOption.textContent?.trim());
             targetOption.click();
         } else {
-            console.log("[Header Toggle] Could not find target option");
+            console.log("[Header Toggle] Could not find target option after", maxAttempts * pollInterval, "ms");
             // Log what options ARE visible for debugging
-            const visibleOptions = Array.from(allElements)
+            const debugElements = document.querySelectorAll('button, [role="menuitem"], [role="option"], [role="listbox"] *, div, span, li');
+            const visibleOptions = Array.from(debugElements)
                 .filter(el => {
                     const rect = el.getBoundingClientRect();
                     const text = el.textContent?.trim();

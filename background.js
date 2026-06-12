@@ -534,7 +534,7 @@ async function detectAuthorWithLLM(context) {
 
   // Get configured model or use default
   const modelStored = await chrome.storage.local.get('gemini-model');
-  const model = modelStored['gemini-model'] || 'gemini-2.0-flash-lite';
+  const model = modelStored['gemini-model'] || 'gemini-3.1-flash-lite';
 
   // Build a focused prompt
   const prompt = `Analyze this web page content and determine who wrote or said the selected text.

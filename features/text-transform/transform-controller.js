@@ -42,7 +42,44 @@ class TransformController {
      * @returns {string} - Text with numbered lists converted to HTML
      */
     convertNumberedListsToHtml(text) {
-        // Pattern to match numbered list items: "1. text" or "1) text" at start of line
+        // First, try to detect numbered items wrapped in <p> tags: <p>1. text</p>
+        // This is the typical format when content comes from a blockquote selection.
+        const htmlParaPattern = /<p>\s*(\d+)[.\)]\s+([\s\S]+?)\s*<\/p>/gi;
+        const htmlParaMatches = [...text.matchAll(htmlParaPattern)];
+
+        if (htmlParaMatches.length >= 2) {
+            let hasSequential = true;
+            for (let i = 1; i < htmlParaMatches.length; i++) {
+                if (parseInt(htmlParaMatches[i][1]) !== parseInt(htmlParaMatches[i-1][1]) + 1) {
+                    hasSequential = false;
+                    break;
+                }
+            }
+
+            if (hasSequential || htmlParaMatches.length >= 3) {
+                console.log("[Transform] Detected HTML-wrapped numbered list with", htmlParaMatches.length, "items");
+
+                const firstFull = htmlParaMatches[0][0];
+                const lastFull = htmlParaMatches[htmlParaMatches.length - 1][0];
+
+                const listStart = text.indexOf(firstFull);
+                const beforeList = text.substring(0, listStart).trim();
+
+                const listEnd = text.indexOf(lastFull) + lastFull.length;
+                const afterList = text.substring(listEnd).trim();
+
+                const listItems = htmlParaMatches.map(m => `<li><p>${m[2].trim()}</p></li>`);
+                const htmlList = `<ol>${listItems.join('')}</ol>`;
+
+                let result = beforeList;
+                if (result) result += '\n';
+                result += htmlList;
+                if (afterList) result += '\n' + afterList;
+                return result;
+            }
+        }
+
+        // Fallback: plain-text pattern "1. text" or "1) text" at start of line
         // Must have at least 2 consecutive numbered items to be considered a list
         const numberedListPattern = /(?:^|\n)(\d+)[.\)]\s+(.+?)(?=\n\d+[.\)]\s|\n\n|\n*$)/gs;
 
@@ -87,10 +124,10 @@ class TransformController {
         // Build the HTML list
         const listItems = matches.map(match => {
             const itemText = match[2].trim();
-            return `<li>${itemText}</li>`;
+            return `<li><p>${itemText}</p></li>`;
         });
 
-        const htmlList = `<ol>\n${listItems.join('\n')}\n</ol>`;
+        const htmlList = `<ol>${listItems.join('')}</ol>`;
 
         // Reconstruct the text
         let result = '';
@@ -294,22 +331,29 @@ class TransformController {
                 }
             }
 
-            // Create fragment for insertion
+            // Insert the transformed content
             const selection = window.getSelection();
             const range = selection.getRangeAt(0);
 
-            const outputDiv = document.createElement('div');
-            outputDiv.innerHTML = processedHtml.trim();
+            // Use execCommand('insertHTML') so ProseMirror's paste handler fires,
+            // which correctly converts <ol><li> to native Substack list nodes.
+            // IMPORTANT: Do NOT call range.deleteContents() first — that empties the
+            // blockquote, ProseMirror removes the now-empty element, and the list is
+            // then inserted outside the blockquote. insertHTML replaces the active
+            // selection atomically so ProseMirror never sees an empty blockquote.
+            const inserted = document.execCommand('insertHTML', false, processedHtml.trim());
 
-            // Move each paragraph to the fragment
-            const fragment = document.createDocumentFragment();
-            Array.from(outputDiv.children).forEach(child => {
-                fragment.appendChild(child.cloneNode(true));
-            });
-
-            // Insert the transformed content
-            range.deleteContents();
-            range.insertNode(fragment);
+            if (!inserted) {
+                // Fallback: delete first, then insert via DOM (blockquote may be lost)
+                range.deleteContents();
+                const outputDiv = document.createElement('div');
+                outputDiv.innerHTML = processedHtml.trim();
+                const fragment = document.createDocumentFragment();
+                Array.from(outputDiv.children).forEach(child => {
+                    fragment.appendChild(child.cloneNode(true));
+                });
+                range.insertNode(fragment);
+            }
 
             // Clean up empty paragraphs at start/end of blockquote (async, non-blocking)
             requestAnimationFrame(() => {

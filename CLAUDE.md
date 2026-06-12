@@ -99,7 +99,7 @@ substack-editor/
 - **JavaScript (ES6+)** - Vanilla JS, no frameworks
 - **Chrome Extension APIs (Manifest V3)**
 - **LLM APIs:**
-  - Google Gemini (configurable model, default `gemini-2.0-flash-lite`)
+  - Google Gemini (configurable model, default `gemini-3.1-flash-lite`)
   - Anthropic Claude (`claude-3-opus-20240229`) - Note: Currently not working
 - **Google Docs API** - OAuth2 via Chrome Identity API for document creation
 - **Twitter Internal APIs** - GraphQL endpoints for list management (uses browser session auth)
@@ -751,7 +751,7 @@ Create `.gemini-test-config.json` in the project root:
 ```json
 {
   "apiKey": "your-api-key-here",
-  "model": "gemini-2.0-flash-lite"
+  "model": "gemini-3.1-flash-lite"
 }
 ```
 
