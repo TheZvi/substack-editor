@@ -45,10 +45,46 @@ function assertNotContains(actual, substring, message) {
 
 /**
  * Converts numbered list patterns in text to proper HTML <ol><li> structure
- * Copied from transform-controller.js for unit testing
+ * Copied from transform-controller.js for unit testing (console.log lines omitted).
+ * Keep in sync.
  */
 function convertNumberedListsToHtml(text) {
-    // Pattern to match numbered list items: "1. text" or "1) text" at start of line
+    // First, try to detect numbered items wrapped in <p> tags: <p>1. text</p>
+    // This is the typical format when content comes from a blockquote selection.
+    const htmlParaPattern = /<p>\s*(\d+)[.\)]\s+([\s\S]+?)\s*<\/p>/gi;
+    const htmlParaMatches = [...text.matchAll(htmlParaPattern)];
+
+    if (htmlParaMatches.length >= 2) {
+        let hasSequential = true;
+        for (let i = 1; i < htmlParaMatches.length; i++) {
+            if (parseInt(htmlParaMatches[i][1]) !== parseInt(htmlParaMatches[i-1][1]) + 1) {
+                hasSequential = false;
+                break;
+            }
+        }
+
+        if (hasSequential || htmlParaMatches.length >= 3) {
+            const firstFull = htmlParaMatches[0][0];
+            const lastFull = htmlParaMatches[htmlParaMatches.length - 1][0];
+
+            const listStart = text.indexOf(firstFull);
+            const beforeList = text.substring(0, listStart).trim();
+
+            const listEnd = text.indexOf(lastFull) + lastFull.length;
+            const afterList = text.substring(listEnd).trim();
+
+            const listItems = htmlParaMatches.map(m => `<li><p>${m[2].trim()}</p></li>`);
+            const htmlList = `<ol>${listItems.join('')}</ol>`;
+
+            let result = beforeList;
+            if (result) result += '\n';
+            result += htmlList;
+            if (afterList) result += '\n' + afterList;
+            return result;
+        }
+    }
+
+    // Fallback: plain-text pattern "1. text" or "1) text" at start of line
     // Must have at least 2 consecutive numbered items to be considered a list
     const numberedListPattern = /(?:^|\n)(\d+)[.\)]\s+(.+?)(?=\n\d+[.\)]\s|\n\n|\n*$)/gs;
 
@@ -91,10 +127,10 @@ function convertNumberedListsToHtml(text) {
     // Build the HTML list
     const listItems = matches.map(match => {
         const itemText = match[2].trim();
-        return `<li>${itemText}</li>`;
+        return `<li><p>${itemText}</p></li>`;
     });
 
-    const htmlList = `<ol>\n${listItems.join('\n')}\n</ol>`;
+    const htmlList = `<ol>${listItems.join('')}</ol>`;
 
     // Reconstruct the text
     let result = '';
@@ -110,6 +146,24 @@ function convertNumberedListsToHtml(text) {
 }
 
 /**
+ * Copied from transform-controller.js removeEmptyParagraphs()
+ * Keep in sync.
+ */
+function removeEmptyParagraphs(html) {
+    return html.replace(/<p[^>]*>(?:\s|&nbsp;|<br[^>]*>)*<\/p>/gi, '');
+}
+
+/**
+ * Copied from transform-controller.js stripInterBlockWhitespace()
+ * Keep in sync.
+ */
+function stripInterBlockWhitespace(html) {
+    return html
+        .replace(/(<\/(?:p|h[1-6]|ol|ul|li|blockquote)>)\s+(?=<)/gi, '$1')
+        .replace(/(<(?:p|h[1-6]|ol|ul|blockquote)(?:\s[^>]*)?>)\s+/gi, '$1');
+}
+
+/**
  * Simulates the paragraph processing logic from transform-controller.js
  * This is the core logic that handles LLM response transformation
  */
@@ -118,6 +172,9 @@ function processTransformOutput(transformedText) {
 
     // Normalize line endings first: convert Windows \r\n and old Mac \r to Unix \n
     processedHtml = processedHtml.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    // Strip empty paragraphs again in case the LLM reintroduced them
+    processedHtml = removeEmptyParagraphs(processedHtml);
 
     // Check if LLM already returned proper HTML list
     const hasHtmlList = processedHtml.includes('<ol>') || processedHtml.includes('<ul>');
@@ -144,6 +201,10 @@ function processTransformOutput(transformedText) {
             processedHtml = `<p>${processedHtml}</p>`;
         }
     }
+
+    // Collapse whitespace between block tags right before insertion —
+    // ProseMirror can materialize it as empty paragraphs
+    processedHtml = stripInterBlockWhitespace(processedHtml);
 
     return processedHtml;
 }
@@ -273,8 +334,9 @@ console.log('\nTest 14: Whitespace only');
 {
     const input = '   \n\n   ';
     const result = processTransformOutput(input);
-    // All whitespace filtered out, falls back to wrapping original
-    assertEqual(result, '<p>   \n\n   </p>', 'Whitespace preserved in fallback');
+    // All whitespace filtered out; the fallback wrap is then stripped of its
+    // leading whitespace by stripInterBlockWhitespace
+    assertEqual(result, '<p></p>', 'Whitespace-only input collapses to empty paragraph');
 }
 
 console.log('\nTest 15: Multiple consecutive double newlines');
@@ -361,9 +423,9 @@ console.log('\nTest 25: Numbered list with Windows line endings - now converts t
     const input = '1. First item.\r\n\r\n2. Second item.\r\n\r\n3. Third item.';
     const result = processTransformOutput(input);
     assertContains(result, '<ol>', 'Numbered list converted to <ol>');
-    assertContains(result, '<li>First item.</li>', 'First item in <li>');
-    assertContains(result, '<li>Second item.</li>', 'Second item in <li>');
-    assertContains(result, '<li>Third item.</li>', 'Third item in <li>');
+    assertContains(result, '<li><p>First item.</p></li>', 'First item in <li>');
+    assertContains(result, '<li><p>Second item.</p></li>', 'Second item in <li>');
+    assertContains(result, '<li><p>Third item.</p></li>', 'Third item in <li>');
 }
 
 console.log('\nTest 26: Numbered list with line break in item');
@@ -371,8 +433,8 @@ console.log('\nTest 26: Numbered list with line break in item');
     const input = '1. First item.\nContinued on next line.\n\n2. Second item.';
     const result = processTransformOutput(input);
     assertContains(result, '<ol>', 'Converted to <ol>');
-    assertContains(result, '<li>First item.', 'First item in list');
-    assertContains(result, '<li>Second item.</li>', 'Second item in list');
+    assertContains(result, '<li><p>First item.', 'First item in list');
+    assertContains(result, '<li><p>Second item.</p></li>', 'Second item in list');
 }
 
 console.log('\nTest 27: Text with only single newlines (no paragraphs)');
@@ -459,9 +521,9 @@ console.log('Test 36: Basic numbered list with periods');
     const result = convertNumberedListsToHtml(input);
     assertContains(result, '<ol>', 'Contains <ol> tag');
     assertContains(result, '</ol>', 'Contains </ol> tag');
-    assertContains(result, '<li>First item.</li>', 'First item in <li>');
-    assertContains(result, '<li>Second item.</li>', 'Second item in <li>');
-    assertContains(result, '<li>Third item.</li>', 'Third item in <li>');
+    assertContains(result, '<li><p>First item.</p></li>', 'First item in <li>');
+    assertContains(result, '<li><p>Second item.</p></li>', 'Second item in <li>');
+    assertContains(result, '<li><p>Third item.</p></li>', 'Third item in <li>');
     assertNotContains(result, '1.', 'Number prefix removed');
     assertNotContains(result, '2.', 'Number prefix removed');
 }
@@ -472,7 +534,7 @@ console.log('\nTest 37: Numbered list with intro text before');
     const result = convertNumberedListsToHtml(input);
     assertContains(result, '<p>My high-level review:</p>', 'Intro text in paragraph');
     assertContains(result, '<ol>', 'Contains <ol> tag');
-    assertContains(result, '<li>First point.</li>', 'First item in <li>');
+    assertContains(result, '<li><p>First point.</p></li>', 'First item in <li>');
 }
 
 console.log('\nTest 38: Numbered list with text after');
@@ -503,7 +565,7 @@ console.log('\nTest 40: Five item numbered list (matching user example)');
     assertEqual((result.match(/<li>/g) || []).length, 5, 'Has 5 list items');
     assertNotContains(result, '1. It', 'Number prefix 1 removed');
     assertNotContains(result, '2. It', 'Number prefix 2 removed');
-    assertContains(result, '<li>It\'s probably superior', 'First item content preserved');
+    assertContains(result, '<li><p>It\'s probably superior', 'First item content preserved');
 }
 
 console.log('\nTest 41: Numbered list with Windows line endings');
@@ -521,7 +583,7 @@ console.log('\nTest 42: Numbered list with parentheses');
     const input = '1) First item.\n2) Second item.\n3) Third item.';
     const result = convertNumberedListsToHtml(input);
     assertContains(result, '<ol>', 'Contains <ol> tag');
-    assertContains(result, '<li>First item.</li>', 'First item in <li>');
+    assertContains(result, '<li><p>First item.</p></li>', 'First item in <li>');
 }
 
 console.log('\nTest 43: Already has HTML list - should be unchanged');
@@ -537,7 +599,7 @@ console.log('\nTest 44: Full integration - intro, list, conclusion');
     const result = processTransformOutput(input);
     assertContains(result, '<p>Dean W. Ball: My high-level review of Claude Cowork:</p>', 'Intro preserved as paragraph');
     assertContains(result, '<ol>', 'List converted to <ol>');
-    assertContains(result, '<li>First point about the UI.</li>', 'First list item');
+    assertContains(result, '<li><p>First point about the UI.</p></li>', 'First list item');
 }
 
 console.log('\nTest 45: Non-sequential numbers (1, 3, 5) - should still convert with 3+ items');
@@ -569,6 +631,127 @@ console.log('\nTest 48: Starting from number other than 1');
     const result = convertNumberedListsToHtml(input);
     assertContains(result, '<ol>', 'List starting from 3 converted');
     assertEqual((result.match(/<li>/g) || []).length, 3, 'Has 3 list items');
+}
+
+// =====================================================
+// EMPTY PARAGRAPH REMOVAL TESTS
+// Blank lines pasted from tweets become empty <p> elements that survive
+// around converted lists (Jackson Dahl "19 Lessons" regression: intro,
+// large gap, list, large gap, outro).
+// =====================================================
+
+console.log('\n=== Empty Paragraph Removal Tests ===\n');
+
+console.log('Test 48a: Removes truly empty paragraphs');
+{
+    const result = removeEmptyParagraphs('<p>Intro</p><p></p><p>Body</p>');
+    assertEqual(result, '<p>Intro</p><p>Body</p>', 'Empty <p></p> removed');
+}
+
+console.log('\nTest 48b: Removes <p> with only <br>');
+{
+    const result = removeEmptyParagraphs('<p>Intro</p><p><br></p><p>Body</p>');
+    assertEqual(result, '<p>Intro</p><p>Body</p>', '<p><br></p> removed');
+}
+
+console.log('\nTest 48c: Removes <p> with ProseMirror trailing break');
+{
+    const result = removeEmptyParagraphs('<p>A</p><p><br class="ProseMirror-trailingBreak"></p><p>B</p>');
+    assertEqual(result, '<p>A</p><p>B</p>', 'ProseMirror trailing-break paragraph removed');
+}
+
+console.log('\nTest 48d: Removes <p> with only whitespace or &nbsp;');
+{
+    assertEqual(removeEmptyParagraphs('<p>A</p><p>   </p><p>B</p>'), '<p>A</p><p>B</p>', 'Whitespace-only paragraph removed');
+    assertEqual(removeEmptyParagraphs('<p>A</p><p>&nbsp;</p><p>B</p>'), '<p>A</p><p>B</p>', '&nbsp;-only paragraph removed');
+    assertEqual(removeEmptyParagraphs('<p>A</p><p> <br> &nbsp; </p><p>B</p>'), '<p>A</p><p>B</p>', 'Mixed whitespace/br/&nbsp; paragraph removed');
+}
+
+console.log('\nTest 48e: Keeps paragraphs with real content');
+{
+    const input = '<p>One word.</p><p><a href="https://x.com/a">link</a></p><p><strong>bold</strong></p>';
+    assertEqual(removeEmptyParagraphs(input), input, 'Paragraphs with text, links or formatting untouched');
+}
+
+console.log('\nTest 48f: Jackson Dahl regression - no gaps around converted list');
+{
+    // Blockquote selection as pasted from the tweet: intro, blank lines,
+    // 19 numbered items, blank lines, outro.
+    const items = [
+        "It's the first inning, sir.",
+        'Fear the Wall Street AIs, not the current crop of pets.',
+        "You don't control a mind, you raise one.",
+        'Send your missionaries to the AI labs.',
+        'AI makes the right handshake more valuable.',
+        "Markets compound virtue; they don't create it.",
+        'Great work demands conviction.',
+        'Your deep thoughts might be the shallow part.',
+        'We like beauty with a strange shape.',
+        'Time spent is its own kind of criticism.',
+        'Simplicity may be complexity, disguised.',
+        'Borrow better taste until it becomes yours.',
+        "Listen to the internet's chords, not a single note.",
+        'A performed plan beats no plan.',
+        'Be mentored from below.',
+        'Talent is context-dependent.',
+        'The two-year book can\'t keep up with the one-week world.',
+        "Don't hit your quota on friendship.",
+        'Maintain an appetite for more.',
+    ];
+    const input =
+        '<p>Jackson Dahl: 19 Lessons from Tyler Cowen and Nabeel Qureshi</p>' +
+        '<p></p><p><br></p>' +
+        items.map((t, i) => `<p>${i + 1}. ${t}</p>`).join('') +
+        '<p><br></p><p></p>' +
+        '<p>Full ep. available below on X and in replies</p>';
+
+    // Mirror the controller's pre-LLM pipeline: strip empty paragraphs, then convert
+    const result = convertNumberedListsToHtml(removeEmptyParagraphs(input));
+
+    assertContains(result, '<ol>', 'List converted to <ol>');
+    assertEqual((result.match(/<li>/g) || []).length, 19, 'All 19 items in list');
+    assertNotContains(result, '<p></p>', 'No empty paragraphs remain');
+    assertNotContains(result, '<p><br></p>', 'No br-only paragraphs remain');
+    assertContains(result, 'Jackson Dahl', 'Intro preserved');
+    assertContains(result, 'Full ep.', 'Outro preserved');
+    // Intro should be immediately followed by the list (newline separator only)
+    assertContains(result, 'Qureshi</p>\n<ol>', 'No gap between intro and list');
+}
+
+// =====================================================
+// INTER-BLOCK WHITESPACE TESTS
+// Newlines between block tags (e.g. the \n convertNumberedListsToHtml puts
+// between </p> and <ol>) can be materialized as empty paragraphs by
+// ProseMirror when inserted via execCommand('insertHTML').
+// =====================================================
+
+console.log('\n=== Inter-Block Whitespace Tests ===\n');
+
+console.log('Test 48g: Strips newline between </p> and <ol>');
+{
+    const result = stripInterBlockWhitespace('<p>Intro</p>\n<ol><li><p>Item</p></li></ol>\n<p>Outro</p>');
+    assertEqual(result, '<p>Intro</p><ol><li><p>Item</p></li></ol><p>Outro</p>', 'Inter-block newlines removed');
+}
+
+console.log('\nTest 48h: Strips whitespace inside list structure');
+{
+    const result = stripInterBlockWhitespace('<ol>\n  <li><p>A</p></li>\n  <li><p>B</p></li>\n</ol>');
+    assertEqual(result, '<ol><li><p>A</p></li><li><p>B</p></li></ol>', 'Whitespace between list tags removed');
+}
+
+console.log('\nTest 48i: Preserves whitespace between inline tags');
+{
+    const input = '<p>See <a href="https://x.com">this</a> <em>and</em> that.</p>';
+    assertEqual(stripInterBlockWhitespace(input), input, 'Inline spacing untouched');
+}
+
+console.log('\nTest 48j: Full pipeline output has no inter-block gaps');
+{
+    const llmOutput = '<p>Jackson Dahl: 19 Lessons</p>\n<ol><li><p>First lesson.</p></li><li><p>Second lesson.</p></li></ol>\n<p>Full ep. available below.</p>';
+    const result = processTransformOutput(llmOutput);
+    assertNotContains(result, '>\n<', 'No newlines between blocks after processing');
+    assertContains(result, '</p><ol>', 'Intro directly abuts list');
+    assertContains(result, '</ol><p>', 'List directly abuts outro');
 }
 
 // =====================================================
@@ -829,8 +1012,8 @@ console.log('Test 58: 8-item numbered list with parentheses format (user-reporte
     assertEqual((result.match(/<li>/g) || []).length, 8, 'Has 8 list items');
     assertNotContains(result, '1)', 'Number prefix 1) removed');
     assertNotContains(result, '8)', 'Number prefix 8) removed');
-    assertContains(result, '<li>Its "human"', 'First item content preserved');
-    assertContains(result, '<li>u/sam_altman posts on Moltbook', 'Last item content preserved');
+    assertContains(result, '<li><p>Its "human"', 'First item content preserved');
+    assertContains(result, '<li><p>u/sam_altman posts on Moltbook', 'Last item content preserved');
 }
 
 console.log('\nTest 59: Numbered list in blockquote context (simulating Substack blockquote)');

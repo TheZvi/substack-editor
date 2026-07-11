@@ -191,6 +191,42 @@ class TransformController {
         return result;
     }
 
+    /**
+     * Removes empty paragraphs (<p></p>, <p><br></p>, <p>&nbsp;</p>) that
+     * render as blank lines in Substack. Blank lines inside a pasted selection
+     * are leftover spacing (e.g. tweet line breaks), not deliberate structure;
+     * core rule 6 (remove excessive blank lines) makes this the intended output.
+     * @param {string} html - The HTML to clean
+     * @returns {string} - HTML without empty paragraphs
+     */
+    removeEmptyParagraphs(html) {
+        return html.replace(/<p[^>]*>(?:\s|&nbsp;|<br[^>]*>)*<\/p>/gi, '');
+    }
+
+    /**
+     * Collapses whitespace-only gaps between block-level tags (e.g. the \n
+     * that convertNumberedListsToHtml puts between </p> and <ol>). ProseMirror
+     * can turn stray inter-block text nodes into empty paragraphs when the
+     * HTML is inserted via execCommand('insertHTML').
+     * @param {string} html - The HTML to clean
+     * @returns {string} - HTML without inter-block whitespace
+     */
+    stripInterBlockWhitespace(html) {
+        return html
+            .replace(/(<\/(?:p|h[1-6]|ol|ul|li|blockquote)>)\s+(?=<)/gi, '$1')
+            .replace(/(<(?:p|h[1-6]|ol|ul|blockquote)(?:\s[^>]*)?>)\s+/gi, '$1');
+    }
+
+    /**
+     * Returns true for block elements that render as blank lines: no visible
+     * text (zero-width chars don't count) and no embedded media.
+     */
+    isVisuallyEmptyBlock(el) {
+        if (!el || !['P', 'DIV'].includes(el.tagName)) return false;
+        if (el.querySelector('img, figure, iframe, video, embed')) return false;
+        return el.textContent.replace(/[\u200B\u200C\u200D\uFEFF]/g, '').trim() === '';
+    }
+
     showWorkingIndicator(label = 'Transforming text…') {
         // Remove any existing indicator
         this.hideWorkingIndicator();
@@ -340,6 +376,10 @@ class TransformController {
                 throw new Error("No API key found");
             }
 
+            // Strip empty paragraphs BEFORE list conversion so blank lines from
+            // the pasted source don't survive around (or inside) the list
+            processedText = this.removeEmptyParagraphs(processedText);
+
             // Pre-convert numbered lists to HTML BEFORE sending to LLM
             // This ensures the list structure is preserved through LLM transformation
             processedText = this.convertNumberedListsToHtml(processedText);
@@ -352,6 +392,9 @@ class TransformController {
 
             // Normalize line endings first: convert Windows \r\n and old Mac \r to Unix \n
             processedHtml = processedHtml.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+            // Strip empty paragraphs again in case the LLM reintroduced them
+            processedHtml = this.removeEmptyParagraphs(processedHtml);
 
             // Check if LLM already returned proper HTML list
             const hasHtmlList = processedHtml.includes('<ol>') || processedHtml.includes('<ul>');
@@ -379,9 +422,33 @@ class TransformController {
                 }
             }
 
+            // Collapse whitespace between block tags right before insertion —
+            // ProseMirror can materialize it as empty paragraphs
+            processedHtml = this.stripInterBlockWhitespace(processedHtml);
+
             // Insert the transformed content
             const selection = window.getSelection();
             const range = selection.getRangeAt(0);
+
+            // Record the cleanup scope BEFORE insertion mutates the DOM.
+            // Quote mode: the enclosing blockquote (sweep all of it).
+            // Own prose: the sibling blocks bounding the selection, so the
+            // sweep stays inside the transformed region.
+            const editorRoot = document.querySelector('.ProseMirror');
+            let scopeNode = range.commonAncestorContainer;
+            if (scopeNode.nodeType === Node.TEXT_NODE) scopeNode = scopeNode.parentElement;
+            const scopeBlockquote = scopeNode?.closest?.('blockquote') || null;
+            const scopeContainer = scopeBlockquote || editorRoot;
+            const topBlockOf = (n) => {
+                if (!n) return null;
+                if (n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+                while (n && n.parentElement && n.parentElement !== scopeContainer) {
+                    n = n.parentElement;
+                }
+                return n && n.parentElement === scopeContainer ? n : null;
+            };
+            const beforeBlock = scopeBlockquote ? null : topBlockOf(range.startContainer)?.previousElementSibling || null;
+            const afterBlock = scopeBlockquote ? null : topBlockOf(range.endContainer)?.nextElementSibling || null;
 
             // Use execCommand('insertHTML') so ProseMirror's paste handler fires,
             // which correctly converts <ol><li> to native Substack list nodes.
@@ -403,23 +470,58 @@ class TransformController {
                 range.insertNode(fragment);
             }
 
-            // Clean up empty paragraphs at start/end of blockquote (async, non-blocking)
-            requestAnimationFrame(() => {
+            // Sweep out any empty paragraphs that survived insertion or were
+            // manufactured by ProseMirror's reparse. Runs twice because PM may
+            // reparse the inserted region asynchronously.
+            const sweepEmptyBlocks = () => {
                 try {
-                    const blockquote = range.commonAncestorContainer.closest?.('blockquote');
-                    if (blockquote) {
-                        const paragraphs = blockquote.querySelectorAll('p');
-                        if (paragraphs.length > 0) {
-                            if (!paragraphs[0].textContent.trim()) {
-                                paragraphs[0].remove();
-                            }
-                            if (!paragraphs[paragraphs.length - 1].textContent.trim()) {
-                                paragraphs[paragraphs.length - 1].remove();
+                    let removed = 0;
+                    // Re-locate the blockquote via the live selection: PM's
+                    // reparse may have replaced the original element instance
+                    let scope = null;
+                    const liveSel = window.getSelection();
+                    let liveNode = liveSel && liveSel.rangeCount
+                        ? liveSel.getRangeAt(0).commonAncestorContainer : null;
+                    if (liveNode && liveNode.nodeType === Node.TEXT_NODE) {
+                        liveNode = liveNode.parentElement;
+                    }
+                    if (scopeBlockquote) {
+                        scope = liveNode?.closest?.('blockquote') ||
+                            (scopeBlockquote.isConnected ? scopeBlockquote : null);
+                        if (!scope) return;
+                        for (const p of [...scope.children]) {
+                            if (this.isVisuallyEmptyBlock(p)) {
+                                p.remove();
+                                removed++;
                             }
                         }
+                    } else {
+                        // Own prose: sweep between the recorded boundary blocks
+                        const root = document.querySelector('.ProseMirror');
+                        if (!root) return;
+                        let node = (beforeBlock && beforeBlock.isConnected)
+                            ? beforeBlock.nextElementSibling : root.firstElementChild;
+                        const stop = (afterBlock && afterBlock.isConnected) ? afterBlock : null;
+                        // Without connected anchors on both sides, don't guess
+                        if (!stop && !(beforeBlock && beforeBlock.isConnected)) return;
+                        while (node && node !== stop) {
+                            const next = node.nextElementSibling;
+                            if (this.isVisuallyEmptyBlock(node)) {
+                                node.remove();
+                                removed++;
+                            }
+                            node = next;
+                        }
+                    }
+                    if (removed > 0) {
+                        console.log("[Transform] Swept", removed, "empty block(s) after insertion");
+                        document.querySelector('.ProseMirror')
+                            ?.dispatchEvent(new InputEvent('input', { bubbles: true }));
                     }
                 } catch (e) { /* ignore cleanup errors */ }
-            });
+            };
+            requestAnimationFrame(sweepEmptyBlocks);
+            setTimeout(sweepEmptyBlocks, 400);
 
             this.hideWorkingIndicator();
             return { success: true };
