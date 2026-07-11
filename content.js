@@ -196,11 +196,85 @@ function initBlockquoteOverride() {
             setupBlockquoteListener(editor);
             setupSmartPaste(editor);
             setupHeaderToggle(editor);
+            setupPasteWhitespaceGuard(editor);
         }
     }, 500);
 
     // Stop checking after 30 seconds
     setTimeout(() => clearInterval(checkEditor), 30000);
+}
+
+// ============================================================================
+// Paste Whitespace Guard
+//
+// Pasting block-shaped clipboard HTML (e.g. a line copied from within the
+// editor when ProseMirror's clipboard serializer didn't run, so the clipboard
+// holds Chrome's generic <p>-wrapped HTML without data-pm-slice) splits the
+// target paragraph and leaves an empty paragraph above and below the pasted
+// content. After every paste into the editor, sweep visually-empty blocks
+// out of the pasted region, bounded by the blocks that surrounded the cursor
+// before the paste so nothing outside the paste site is touched.
+// ============================================================================
+
+function setupPasteWhitespaceGuard(editor) {
+    console.log("[Paste Guard] Setting up listener");
+
+    const isEmptyBlock = (el) => {
+        if (!el || !['P', 'DIV'].includes(el.tagName)) return false;
+        if (el.querySelector('img, figure, iframe, video, audio, embed')) return false;
+        return el.textContent.replace(/[\u200B\u200C\u200D\uFEFF]/g, '').trim() === '';
+    };
+
+    // Climb to the block that is a direct child of the sweep container
+    const topBlockOf = (node, container) => {
+        if (!node) return null;
+        if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+        while (node && node.parentElement && node.parentElement !== container) {
+            node = node.parentElement;
+        }
+        return node && node.parentElement === container ? node : null;
+    };
+
+    editor.addEventListener('paste', () => {
+        if (isOrphanedInstance()) return;
+        try {
+            // Capture the paste site BEFORE the browser applies the paste
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return;
+            const range = sel.getRangeAt(0);
+            let anchorEl = range.commonAncestorContainer;
+            if (anchorEl.nodeType === Node.TEXT_NODE) anchorEl = anchorEl.parentElement;
+            const container = anchorEl?.closest?.('blockquote') || editor;
+            const targetBlock = topBlockOf(range.startContainer, container);
+            if (!targetBlock) return;
+            const beforeAnchor = targetBlock.previousElementSibling;
+            const afterAnchor = topBlockOf(range.endContainer, container)?.nextElementSibling || null;
+
+            // Sweep after ProseMirror has applied and re-rendered the paste
+            setTimeout(() => {
+                try {
+                    if (!container.isConnected) return;
+                    let node = (beforeAnchor && beforeAnchor.isConnected)
+                        ? beforeAnchor.nextElementSibling
+                        : container.firstElementChild;
+                    const stop = (afterAnchor && afterAnchor.isConnected) ? afterAnchor : null;
+                    let removed = 0;
+                    while (node && node !== stop) {
+                        const next = node.nextElementSibling;
+                        if (isEmptyBlock(node)) {
+                            node.remove();
+                            removed++;
+                        }
+                        node = next;
+                    }
+                    if (removed > 0) {
+                        console.log("[Paste Guard] Removed", removed, "empty paragraph(s) around paste");
+                        editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
+                    }
+                } catch (e) { /* ignore sweep errors */ }
+            }, 150);
+        } catch (e) { /* ignore */ }
+    });
 }
 
 function setupBlockquoteListener(editor) {
