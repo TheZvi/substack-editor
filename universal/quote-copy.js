@@ -515,8 +515,20 @@ if (typeof module !== 'undefined' && module.exports) {
 // Keyboard Listeners
 // ============================================================================
 
+// True when this content script instance was orphaned by an extension
+// reload/update. Orphaned instances keep their DOM listeners, so without this
+// check shortcuts fire twice (once here, once in the fresh instance).
+function isOrphanedInstance() {
+    try {
+        return !chrome.runtime?.id;
+    } catch (e) {
+        return true;
+    }
+}
+
 // Listen for ";a" sequence
 document.addEventListener('keydown', (e) => {
+    if (isOrphanedInstance()) return;
     // Don't trigger if user is typing in an input field
     const activeEl = document.activeElement;
     const isTyping = activeEl.tagName === 'INPUT' ||
@@ -545,6 +557,7 @@ document.addEventListener('keydown', (e) => {
 
 // Alt+A shortcut
 document.addEventListener('keydown', (e) => {
+    if (isOrphanedInstance()) return;
     // Don't trigger if user is typing in an input field
     const activeEl = document.activeElement;
     const isTyping = activeEl.tagName === 'INPUT' ||
@@ -596,15 +609,77 @@ async function getAuthorAnnotation(authorName, handle, isTwitter) {
     return null;
 }
 
+// ============================================================================
+// Archive snapshot support (archive.today family + Wayback Machine)
+//
+// Snapshot pages should quote as if they were the original site: website
+// annotations key off the original domain and the copied link points to the
+// original URL. isArchiveHost/extractEmbeddedUrl are pure for unit testing.
+// ============================================================================
+
+const ARCHIVE_HOST_PATTERN = /(^|\.)(archive\.(is|ph|today|md|li|vn|fo)|web\.archive\.org)$/i;
+
+function isArchiveHost(hostname) {
+    return ARCHIVE_HOST_PATTERN.test(hostname || '');
+}
+
+// Pull an embedded original URL out of an archive snapshot URL, e.g.
+//   https://archive.is/2026.06.27-130734/https://www.axios.com/...   (canonical)
+//   https://archive.is/o/cXCJ0/https://www.axios.com/authors/x       (rewritten link)
+//   https://web.archive.org/web/20260627000000/https://www.axios.com/ (wayback)
+function extractEmbeddedUrl(url) {
+    if (!url) return null;
+    const match = url.match(/^https?:\/\/[^/]+\/.*?(https?:\/\/?.+)$/i);
+    if (!match) return null;
+    // Wayback sometimes collapses "https://" to "https:/" — restore it
+    return match[1].replace(/^(https?:\/)([^/])/i, '$1/$2');
+}
+
+function getArchiveOriginalUrl() {
+    if (!isArchiveHost(window.location.hostname)) return null;
+    try {
+        // The address bar (full-form snapshots, wayback) or the canonical link
+        // (archive.today short links like /cXCJ0) carries the original URL.
+        const candidates = [
+            window.location.href,
+            document.querySelector('link[rel="canonical"]')?.getAttribute('href') || '',
+        ];
+        for (const candidate of candidates) {
+            const embedded = extractEmbeddedUrl(candidate);
+            if (embedded && isValidUrl(embedded) && !isArchiveHost(new URL(embedded).hostname)) {
+                return cleanUrl(embedded);
+            }
+        }
+        // Fallback: archive.today's "saved from" search box holds the original URL
+        for (const input of document.querySelectorAll('input[type="text"]')) {
+            const val = (input.value || '').trim();
+            if (/^https?:\/\//i.test(val) && isValidUrl(val) && !isArchiveHost(new URL(val).hostname)) {
+                return cleanUrl(val);
+            }
+        }
+    } catch (e) {
+        console.error("[Quote Copy] Error extracting archive original URL:", e);
+    }
+    return null;
+}
+
 /**
- * Looks up a website annotation from chrome.storage.sync based on current hostname
+ * Looks up a website annotation from chrome.storage.sync based on current hostname.
+ * On archive snapshots, the original site's hostname is used instead, so
+ * e.g. an archived Axios article gets the axios.com annotation.
  * @returns {Promise<string|null>} The annotation text, or null
  */
 async function getWebsiteAnnotation() {
     try {
         const result = await chrome.storage.sync.get('websiteAnnotations');
         const annotations = result.websiteAnnotations || [];
-        const hostname = window.location.hostname.toLowerCase();
+        let hostname = window.location.hostname.toLowerCase();
+        const originalUrl = getArchiveOriginalUrl();
+        if (originalUrl) {
+            try {
+                hostname = new URL(originalUrl).hostname.toLowerCase();
+            } catch (e) { /* keep archive hostname */ }
+        }
 
         for (const ann of annotations) {
             const domain = ann.domain.toLowerCase();
@@ -972,6 +1047,22 @@ function isLikelyJobTitle(text) {
     return JOB_TITLE_PATTERN.test(text.trim());
 }
 
+// Some sites (e.g. politico.com) render bylines in all caps ("By DANA NICKEL"),
+// either literally or via CSS text-transform, which innerText reflects.
+// Convert to title case so validation and output treat it as a normal name.
+// Connector words ("and", "&") may be lowercase in an otherwise all-caps byline.
+function isAllCapsName(name) {
+    const withoutConnectors = name.replace(/\b(and)\b/g, '');
+    return /[A-Z]/.test(withoutConnectors) && !/[a-z]/.test(withoutConnectors);
+}
+
+function titleCaseAllCapsName(name) {
+    return name.replace(/[A-Za-z]+/g, word => {
+        if (/^and$/i.test(word)) return 'and';
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    });
+}
+
 /**
  * Extract a byline from raw innerText of the page body.
  * Pure function (no DOM access) so it can be unit-tested directly.
@@ -986,7 +1077,12 @@ function extractBylineFromBodyText(bodyText) {
     const earlyText = bodyText.substring(0, 3000);
     const byLineMatch = earlyText.match(/\n[Bb]y ([^\n]{4,120})\s*\n/);
     if (byLineMatch) {
-        const potentialByline = byLineMatch[1].trim();
+        let potentialByline = byLineMatch[1].trim();
+        // All-caps byline (Politico style "By DANA NICKEL") — title-case it so the
+        // capWords validation below accepts it and the output reads as a name.
+        if (isAllCapsName(potentialByline)) {
+            potentialByline = titleCaseAllCapsName(potentialByline);
+        }
         const capWords = potentialByline.match(/\b[A-Z][a-z]+/g);
         if (capWords && capWords.length >= 2 && /^[A-Z]/.test(potentialByline) &&
             !isLikelyJobTitle(potentialByline)) {
@@ -994,11 +1090,38 @@ function extractBylineFromBodyText(bodyText) {
         }
     }
 
+    // Fallback: line immediately before a standalone date line, e.g. the
+    // Substack reader (substack.com/home/post/...): "PETE BUTTIGIEG" directly
+    // above "JUN 26, 2026". Checked line by line over the early text.
+    const DATE_LINE_PATTERN = /^(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4})$/i;
+    const lines = earlyText.split('\n').map(l => l.trim());
+    for (let i = 1; i < lines.length; i++) {
+        if (!DATE_LINE_PATTERN.test(lines[i])) continue;
+        // Nearest non-empty line above the date
+        let j = i - 1;
+        while (j >= 0 && !lines[j]) j--;
+        if (j < 0) continue;
+        let candidate = lines[j];
+        if (isAllCapsName(candidate)) {
+            candidate = titleCaseAllCapsName(candidate);
+        }
+        if (isLikelyJobTitle(candidate)) continue;
+        const words = candidate.split(/[\s,]+/).filter(w => w);
+        const capWords = words.filter(w => /^[A-Z]/.test(w));
+        const isLikelyName = words.length >= 2 && words.length <= 8 &&
+            capWords.length >= 2 &&
+            words.every(w => (/^[A-Z][a-zA-Z.'’-]*$/.test(w) && w.length <= 20) || /^(and|&)$/i.test(w));
+        if (isLikelyName) return candidate;
+    }
+
     // Fallback: line immediately before "Published" (common in news articles like FT).
     // Handles: "Author Name", "Author1 and Author2", "Author1 and Author2 in Location".
     const publishedMatch = bodyText.match(/\n([^\n]{4,120})\s*\n\s*Published/);
     if (publishedMatch && publishedMatch[1]) {
         let potentialByline = publishedMatch[1].trim();
+        if (isAllCapsName(potentialByline)) {
+            potentialByline = titleCaseAllCapsName(potentialByline);
+        }
         potentialByline = potentialByline.replace(/\s+in\s+[A-Z][a-zA-Z\s,]+$/, '');
         if (isLikelyJobTitle(potentialByline)) return null;
         const words = potentialByline.split(/[\s,]+/).filter(w => w);
@@ -1010,6 +1133,62 @@ function extractBylineFromBodyText(bodyText) {
     }
 
     return null;
+}
+
+// ============================================================================
+// Author profile links
+//
+// archive.today (archive.is/.ph/.md/...) strips meta tags, breaks JSON-LD and
+// removes classes/data-testid from archived pages, which kills every other
+// detection layer. But it keeps hrefs, rewritten as
+// archive.is/o/<code>/<original-url>, so the original author-profile path
+// (e.g. axios.com/authors/mikeallen, nytimes.com/by/cade-metz) is still
+// present as a substring. These helpers are pure so they can be unit-tested.
+// ============================================================================
+
+// Author/staff profile path segments used by major outlets:
+// /authors/ (Axios, Bloomberg, The Verge), /by/ (NYT), /staff/ (Politico),
+// /people/ (WaPo), /author/ (WordPress and many others).
+const AUTHOR_PROFILE_HREF_PATTERN = /\/(authors?|by|staff|people|profiles?|contributors?|writers?|columnists?)\/[^/?#]/i;
+
+function isAuthorProfileHref(href) {
+    if (!href) return false;
+    if (/^(mailto:|javascript:|tel:|#)/i.test(href)) return false;
+    return AUTHOR_PROFILE_HREF_PATTERN.test(href);
+}
+
+// Byline anchors sometimes include the separator inside the link text
+// (e.g. "Mike Allen,  " on archived Axios pages). Strip leading/trailing
+// separators before name validation.
+function cleanAuthorLinkText(text) {
+    return (text || '')
+        .replace(/^[\s,&]+|[\s,&]+$/g, '')
+        .replace(/^and\s+/i, '')
+        .replace(/\s+and$/i, '')
+        .trim();
+}
+
+// Does the link text look like a person's name? 2-4 words, starts capitalized,
+// at least two capital letters overall (allows lowercase particles like
+// "von der"), no job titles or nav labels ("More Authors", "About Us").
+function isLikelyPersonName(text) {
+    if (!text) return false;
+    const trimmed = text.trim();
+    if (trimmed.length < 4 || trimmed.length > 50) return false;
+    if (isLikelyJobTitle(trimmed)) return false;
+    if (/^(more|all|meet|our|the|about|other|view|see|read)\b/i.test(trimmed)) return false;
+    if (!/^[A-Z][A-Za-zÀ-ÿ.'’-]*(\s+[A-Za-zÀ-ÿ.'’-]+){1,3}$/.test(trimmed)) return false;
+    return (trimmed.match(/[A-Z]/g) || []).length >= 2;
+}
+
+// Join multiple authors the same way the JSON-LD path does.
+// Capped at 4 names as a safeguard against runaway matches.
+function joinAuthorNames(names) {
+    const capped = names.slice(0, 4);
+    if (capped.length === 0) return null;
+    if (capped.length === 1) return capped[0];
+    if (capped.length === 2) return `${capped[0]} and ${capped[1]}`;
+    return capped.slice(0, -1).join(', ') + ' and ' + capped[capped.length - 1];
 }
 
 function detectPageAuthor() {
@@ -1075,21 +1254,28 @@ function detectPageAuthor() {
         return cleanAuthorName(textByline);
     }
 
-    // 2. Meta tags
+    // 2. Meta tags. twitter:creator is NOT here — it's frequently the publication's
+    // own handle (e.g. @politico) rather than the author, so it's a last-resort
+    // fallback below, after JSON-LD and DOM bylines.
     const metaSelectors = [
         'meta[name="author"]',
         'meta[property="article:author"]',
         'meta[property="og:article:author"]',
-        'meta[name="twitter:creator"]',
         'meta[name="dc.creator"]',
     ];
 
+    const siteLabel = hostname.replace(/^www\./, '').split('.')[0].toLowerCase();
     for (const selector of metaSelectors) {
         const meta = document.querySelector(selector);
         const content = meta?.getAttribute('content');
         if (content?.trim()) {
             // Skip URL values (e.g., article:author often contains author profile URL, not name)
             if (content.trim().startsWith('http://') || content.trim().startsWith('https://')) {
+                continue;
+            }
+            // Skip platform boilerplate: a meta author matching the site's own
+            // name (e.g. "Substack" on substack.com) is not a person
+            if (content.trim().toLowerCase() === siteLabel) {
                 continue;
             }
             return cleanAuthorName(content);
@@ -1119,7 +1305,6 @@ function detectPageAuthor() {
         '.entry-author',
         '.author',
         '.byline',
-        'a[href*="/author/"]',
         '.posted-by a',
         '[data-testid="authorName"]',
         '.article-author',
@@ -1149,6 +1334,49 @@ function detectPageAuthor() {
     const substackAuthor = document.querySelector('.byline-content .profile-name');
     if (substackAuthor?.textContent?.trim()) {
         return cleanAuthorName(substackAuthor.textContent);
+    }
+
+    // 6. Author profile links (a[href*="/authors/"], /by/, /staff/, ...).
+    // The main path that still works on archive.today snapshots, where meta
+    // tags, JSON-LD and classes are all stripped but hrefs survive inside
+    // the rewritten archive.is/o/<code>/<original-url> form.
+    const authorLinks = [];
+    for (const link of document.querySelectorAll('a[href]')) {
+        if (!isAuthorProfileHref(link.getAttribute('href'))) continue;
+        if (link.closest('#comments, .comments, .comments-area, [class*="comment-list"], [id*="comments"], article.blog-comment')) {
+            continue;
+        }
+        if (isLikelyPersonName(cleanAuthorLinkText(link.textContent))) {
+            authorLinks.push(link);
+        }
+    }
+    if (authorLinks.length > 0) {
+        // First matching link in document order is the byline (bylines sit at
+        // the top). Co-authors of the same article share its list/container.
+        const first = authorLinks[0];
+        const container = first.closest('ul, ol') || first.parentElement;
+        const names = [];
+        for (const link of authorLinks) {
+            if (link !== first && !(container && container.contains(link))) continue;
+            const name = cleanAuthorName(cleanAuthorLinkText(link.textContent));
+            if (name && !names.includes(name)) names.push(name);
+        }
+        const joined = joinAuthorNames(names);
+        if (joined) {
+            console.log("[Quote Copy] Found author profile link(s):", joined);
+            return joined;
+        }
+    }
+
+    // 7. twitter:creator as last resort. Skip when it's the publication's own
+    // handle (e.g. @politico on politico.com) rather than a person.
+    const twitterCreator = document.querySelector('meta[name="twitter:creator"]')
+        ?.getAttribute('content')?.trim();
+    if (twitterCreator && !twitterCreator.startsWith('http')) {
+        const handle = twitterCreator.replace(/^@/, '').toLowerCase();
+        if (handle && handle !== siteLabel) {
+            return cleanAuthorName(twitterCreator);
+        }
     }
 
     return null;
@@ -1249,9 +1477,19 @@ async function detectAuthorWithLLM(range, selectedText) {
 // URL Detection
 // ============================================================================
 
+// Page URL for the quote link: on archive snapshots, prefer the original URL.
+function getQuotePageUrl() {
+    const original = getArchiveOriginalUrl();
+    if (original) {
+        console.log("[Quote Copy] Using original URL from archive snapshot:", original);
+        return original;
+    }
+    return cleanUrl(window.location.href);
+}
+
 function detectUrl(range) {
     if (!range) {
-        return cleanUrl(window.location.href);
+        return getQuotePageUrl();
     }
 
     // Get the common ancestor element
@@ -1322,12 +1560,20 @@ function detectUrl(range) {
         : startContainer.closest('a');
 
     if (link?.href && isValidUrl(link.href)) {
-        console.log("[Quote Copy] Using link href:", link.href);
-        return link.href;
+        let href = link.href;
+        // Archive snapshots rewrite in-page links as archive.is/o/<code>/<original> — unwrap
+        if (isArchiveHost(window.location.hostname)) {
+            const embedded = extractEmbeddedUrl(href);
+            if (embedded && isValidUrl(embedded)) {
+                href = embedded;
+            }
+        }
+        console.log("[Quote Copy] Using link href:", href);
+        return href;
     }
 
     // Default to page URL
-    return cleanUrl(window.location.href);
+    return getQuotePageUrl();
 }
 
 function cleanUrl(url) {

@@ -28,13 +28,28 @@ function isLikelyJobTitle(text) {
     return JOB_TITLE_PATTERN.test(text.trim());
 }
 
+function isAllCapsName(name) {
+    const withoutConnectors = name.replace(/\b(and)\b/g, '');
+    return /[A-Z]/.test(withoutConnectors) && !/[a-z]/.test(withoutConnectors);
+}
+
+function titleCaseAllCapsName(name) {
+    return name.replace(/[A-Za-z]+/g, word => {
+        if (/^and$/i.test(word)) return 'and';
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    });
+}
+
 function extractBylineFromBodyText(bodyText) {
     if (!bodyText) return null;
 
     const earlyText = bodyText.substring(0, 3000);
     const byLineMatch = earlyText.match(/\n[Bb]y ([^\n]{4,120})\s*\n/);
     if (byLineMatch) {
-        const potentialByline = byLineMatch[1].trim();
+        let potentialByline = byLineMatch[1].trim();
+        if (isAllCapsName(potentialByline)) {
+            potentialByline = titleCaseAllCapsName(potentialByline);
+        }
         const capWords = potentialByline.match(/\b[A-Z][a-z]+/g);
         if (capWords && capWords.length >= 2 && /^[A-Z]/.test(potentialByline) &&
             !isLikelyJobTitle(potentialByline)) {
@@ -42,9 +57,36 @@ function extractBylineFromBodyText(bodyText) {
         }
     }
 
+    // Fallback: line immediately before a standalone date line, e.g. the
+    // Substack reader (substack.com/home/post/...): "PETE BUTTIGIEG" directly
+    // above "JUN 26, 2026". Checked line by line over the early text.
+    const DATE_LINE_PATTERN = /^(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4})$/i;
+    const lines = earlyText.split('\n').map(l => l.trim());
+    for (let i = 1; i < lines.length; i++) {
+        if (!DATE_LINE_PATTERN.test(lines[i])) continue;
+        // Nearest non-empty line above the date
+        let j = i - 1;
+        while (j >= 0 && !lines[j]) j--;
+        if (j < 0) continue;
+        let candidate = lines[j];
+        if (isAllCapsName(candidate)) {
+            candidate = titleCaseAllCapsName(candidate);
+        }
+        if (isLikelyJobTitle(candidate)) continue;
+        const words = candidate.split(/[\s,]+/).filter(w => w);
+        const capWords = words.filter(w => /^[A-Z]/.test(w));
+        const isLikelyName = words.length >= 2 && words.length <= 8 &&
+            capWords.length >= 2 &&
+            words.every(w => (/^[A-Z][a-zA-Z.'’-]*$/.test(w) && w.length <= 20) || /^(and|&)$/i.test(w));
+        if (isLikelyName) return candidate;
+    }
+
     const publishedMatch = bodyText.match(/\n([^\n]{4,120})\s*\n\s*Published/);
     if (publishedMatch && publishedMatch[1]) {
         let potentialByline = publishedMatch[1].trim();
+        if (isAllCapsName(potentialByline)) {
+            potentialByline = titleCaseAllCapsName(potentialByline);
+        }
         potentialByline = potentialByline.replace(/\s+in\s+[A-Z][a-zA-Z\s,]+$/, '');
         if (isLikelyJobTitle(potentialByline)) return null;
         const words = potentialByline.split(/[\s,]+/).filter(w => w);
@@ -56,6 +98,40 @@ function extractBylineFromBodyText(bodyText) {
     }
 
     return null;
+}
+
+const AUTHOR_PROFILE_HREF_PATTERN = /\/(authors?|by|staff|people|profiles?|contributors?|writers?|columnists?)\/[^/?#]/i;
+
+function isAuthorProfileHref(href) {
+    if (!href) return false;
+    if (/^(mailto:|javascript:|tel:|#)/i.test(href)) return false;
+    return AUTHOR_PROFILE_HREF_PATTERN.test(href);
+}
+
+function cleanAuthorLinkText(text) {
+    return (text || '')
+        .replace(/^[\s,&]+|[\s,&]+$/g, '')
+        .replace(/^and\s+/i, '')
+        .replace(/\s+and$/i, '')
+        .trim();
+}
+
+function isLikelyPersonName(text) {
+    if (!text) return false;
+    const trimmed = text.trim();
+    if (trimmed.length < 4 || trimmed.length > 50) return false;
+    if (isLikelyJobTitle(trimmed)) return false;
+    if (/^(more|all|meet|our|the|about|other|view|see|read)\b/i.test(trimmed)) return false;
+    if (!/^[A-Z][A-Za-zÀ-ÿ.'’-]*(\s+[A-Za-zÀ-ÿ.'’-]+){1,3}$/.test(trimmed)) return false;
+    return (trimmed.match(/[A-Z]/g) || []).length >= 2;
+}
+
+function joinAuthorNames(names) {
+    const capped = names.slice(0, 4);
+    if (capped.length === 0) return null;
+    if (capped.length === 1) return capped[0];
+    if (capped.length === 2) return `${capped[0]} and ${capped[1]}`;
+    return capped.slice(0, -1).join(', ') + ' and ' + capped[capped.length - 1];
 }
 
 // ============================================================================
@@ -177,6 +253,211 @@ assertEqual(
     'Multiple "By" authors preserved'
 );
 
+console.log('\n--- extractBylineFromBodyText: politico.com all-caps regression ---');
+// politico.com renders bylines in all caps ("By DANA NICKEL"), which the
+// capWords validation used to reject. Detection then fell through to
+// meta[name="twitter:creator"] = "@politico" and the author came out as
+// "politico" instead of "Dana Nickel".
+const politicoText = [
+    'SKIP TO MAIN CONTENT',
+    'Toggle menu',
+    'MORE FROM POLITICO',
+    "Trump's AI flip-flopping could be a gift to China",
+    '',
+    'Chinese AI companies have announced breakthroughs in advanced AI.',
+    '',
+    'Photo caption text here. | Andrew Harnik/Getty Images',
+    '',
+    'By DANA NICKEL',
+    '',
+    '07/01/2026 05:00 AM EDT',
+    '',
+    'Article body starts here.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(politicoText),
+    'Dana Nickel',
+    'politico.com: all-caps "By DANA NICKEL" becomes "Dana Nickel"'
+);
+
+const allCapsMultiAuthorText = [
+    'Publication',
+    '',
+    'By ALICE SMITH and BOB JONES',
+    '',
+    'Article body.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(allCapsMultiAuthorText),
+    'Alice Smith and Bob Jones',
+    'All-caps multi-author byline is title-cased with lowercase "and"'
+);
+
+const allCapsAndUppercaseText = [
+    'Publication',
+    '',
+    'By ALICE SMITH AND BOB JONES',
+    '',
+    'Article body.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(allCapsAndUppercaseText),
+    'Alice Smith and Bob Jones',
+    'All-caps "AND" between authors is lowercased'
+);
+
+const allCapsHyphenText = [
+    'Publication',
+    '',
+    'By MARY SMITH-JONES',
+    '',
+    'Article body.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(allCapsHyphenText),
+    'Mary Smith-Jones',
+    'All-caps hyphenated surname is title-cased on both sides'
+);
+
+const allCapsApostropheText = [
+    'Publication',
+    '',
+    "By SEAN O'BRIEN",
+    '',
+    'Article body.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(allCapsApostropheText),
+    "Sean O'Brien",
+    'All-caps apostrophe surname is title-cased after the apostrophe'
+);
+
+const allCapsJobTitleText = [
+    'Publication',
+    '',
+    'By SENIOR REPORTER',
+    '',
+    'Article body.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(allCapsJobTitleText),
+    null,
+    'All-caps job title is still rejected after title-casing'
+);
+
+const allCapsPublishedText = [
+    'Publication',
+    '',
+    'GILLIAN TETT',
+    'Published March 4, 2026',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(allCapsPublishedText),
+    'Gillian Tett',
+    'All-caps name before Published is title-cased'
+);
+
+console.log('\n--- titleCaseAllCapsName ---');
+assertEqual(titleCaseAllCapsName('DANA NICKEL'), 'Dana Nickel', 'Simple two-word name');
+assertEqual(titleCaseAllCapsName('ALICE SMITH AND BOB JONES'), 'Alice Smith and Bob Jones', 'AND is lowercased');
+assertEqual(titleCaseAllCapsName('J.D. VANCE'), 'J.D. Vance', 'Single-letter initials keep their capitals');
+
+console.log('\n--- isAllCapsName ---');
+assertEqual(isAllCapsName('DANA NICKEL'), true, 'All-caps name detected');
+assertEqual(isAllCapsName('ALICE SMITH and BOB JONES'), true, 'Lowercase "and" connector still counts as all-caps');
+assertEqual(isAllCapsName('Dana Nickel'), false, 'Title-case name is not all-caps');
+assertEqual(isAllCapsName('Jonah Owen Lamb'), false, 'Normal byline is not all-caps');
+
+console.log('\n--- extractBylineFromBodyText: substack reader (byline above date line) ---');
+// substack.com/home/post/p-XXXX regression: meta[name="author"] is "Substack"
+// (platform boilerplate) and the only good signal is the all-caps byline
+// directly above a standalone date line.
+const substackReaderText = [
+    '18',
+    '99+',
+    'Subscribe',
+    "PETE BUTTIGIEG'S SUBSTACK",
+    'A Terrible Thing Happened to My Family',
+    "Even in today's climate, there should be one fundamental principle everyone respects.",
+    'PETE BUTTIGIEG',
+    'JUN 26, 2026',
+    '',
+    'Someone decided to hurt our family this week.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(substackReaderText),
+    'Pete Buttigieg',
+    'Substack reader: all-caps byline above date line becomes "Pete Buttigieg"'
+);
+
+const titleCaseDateText = [
+    'Some Publication',
+    'Article Title Here With Lowercase words in it',
+    'Jane Doe',
+    'June 26, 2026',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(titleCaseDateText),
+    'Jane Doe',
+    'Title-case byline above full-month date line'
+);
+
+const dayFirstDateText = [
+    'Publication',
+    'Alice Smith',
+    '26 Jun 2026',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(dayFirstDateText),
+    'Alice Smith',
+    'Byline above day-first date line (26 Jun 2026)'
+);
+
+const blankLineBeforeDateText = [
+    'Publication',
+    'Bob Jones',
+    '',
+    'Jun. 26, 2026',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(blankLineBeforeDateText),
+    'Bob Jones',
+    'Blank line between byline and date is skipped'
+);
+
+const titleBeforeDateText = [
+    'Publication',
+    'A Terrible Thing Happened to My Family',
+    'JUN 26, 2026',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(titleBeforeDateText),
+    null,
+    'Title with lowercase words above date is not mistaken for author'
+);
+
+const jobTitleBeforeDateText = [
+    'Publication',
+    'Senior Reporter',
+    'JUN 26, 2026',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(jobTitleBeforeDateText),
+    null,
+    'Job title above date is rejected'
+);
+
+const singleWordBeforeDateText = [
+    'Publication',
+    'Subscribe',
+    'JUN 26, 2026',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(singleWordBeforeDateText),
+    null,
+    'Single word above date is rejected'
+);
+
 console.log('\n--- extractBylineFromBodyText: negative cases ---');
 assertEqual(extractBylineFromBodyText(''), null, 'Empty string returns null');
 assertEqual(extractBylineFromBodyText(null), null, 'Null returns null');
@@ -197,6 +478,66 @@ assertEqual(
     null,
     'Job title alone before Published is not returned as author'
 );
+
+// ============================================================================
+// Author profile link detection (archive.today regression)
+//
+// archive.is/.ph strips meta tags, breaks JSON-LD and removes classes from
+// archived pages, so author-profile hrefs (which archive.today preserves,
+// rewritten as archive.is/o/<code>/<original-url>) are the only reliable
+// signal left. Example: archive.is/cXCJ0 (Axios, two authors) resolved to
+// the page title instead of "Mike Allen and Zachary Basu".
+// ============================================================================
+
+console.log('\n--- isAuthorProfileHref ---');
+assertEqual(
+    isAuthorProfileHref('https://archive.is/o/cXCJ0/https://www.axios.com/authors/mikeallen'),
+    true,
+    'archive.is-rewritten Axios /authors/ link matches'
+);
+assertEqual(isAuthorProfileHref('https://www.nytimes.com/by/cade-metz'), true, 'NYT /by/ link matches');
+assertEqual(isAuthorProfileHref('https://www.politico.com/staff/dana-nickel'), true, 'Politico /staff/ link matches');
+assertEqual(isAuthorProfileHref('https://www.washingtonpost.com/people/some-writer/'), true, 'WaPo /people/ link matches');
+assertEqual(isAuthorProfileHref('/author/jane-doe'), true, 'Relative WordPress /author/ link matches');
+assertEqual(isAuthorProfileHref('https://example.com/contributors/john'), true, '/contributors/ link matches');
+assertEqual(isAuthorProfileHref('mailto:tips@axios.com'), false, 'mailto: is rejected');
+assertEqual(isAuthorProfileHref('#authors/section'), false, 'Fragment-only href is rejected');
+assertEqual(isAuthorProfileHref('https://example.com/bypass/page'), false, '/bypass/ does not match /by/');
+assertEqual(isAuthorProfileHref('https://example.com/by/'), false, '/by/ with nothing after it is rejected');
+assertEqual(isAuthorProfileHref('https://example.com/news/article'), false, 'Ordinary article link is rejected');
+assertEqual(isAuthorProfileHref(null), false, 'Null href is rejected');
+
+console.log('\n--- cleanAuthorLinkText ---');
+assertEqual(cleanAuthorLinkText('Mike Allen,  '), 'Mike Allen', 'Trailing comma inside anchor is stripped (archived Axios)');
+assertEqual(cleanAuthorLinkText(', Zachary Basu'), 'Zachary Basu', 'Leading comma is stripped');
+assertEqual(cleanAuthorLinkText('and Bob Jones'), 'Bob Jones', 'Leading "and" is stripped');
+assertEqual(cleanAuthorLinkText('Alice Smith and'), 'Alice Smith', 'Trailing "and" is stripped');
+assertEqual(cleanAuthorLinkText('  Jane Doe  '), 'Jane Doe', 'Whitespace is trimmed');
+assertEqual(cleanAuthorLinkText('Andrea Long'), 'Andrea Long', 'Name starting with "And" is not mangled');
+assertEqual(cleanAuthorLinkText(''), '', 'Empty string stays empty');
+
+console.log('\n--- isLikelyPersonName ---');
+assertEqual(isLikelyPersonName('Mike Allen'), true, 'Simple two-word name');
+assertEqual(isLikelyPersonName('Zachary Basu'), true, 'Another two-word name');
+assertEqual(isLikelyPersonName('J.D. Vance'), true, 'Initials with periods');
+assertEqual(isLikelyPersonName('Mary Smith-Jones'), true, 'Hyphenated surname');
+assertEqual(isLikelyPersonName("Sean O'Brien"), true, 'Apostrophe surname');
+assertEqual(isLikelyPersonName('Ursula von der Leyen'), true, 'Lowercase particles allowed');
+assertEqual(isLikelyPersonName('Subscribe'), false, 'Single word rejected');
+assertEqual(isLikelyPersonName('Staff Writer'), false, 'Job title rejected');
+assertEqual(isLikelyPersonName('More Authors'), false, 'Nav label "More ..." rejected');
+assertEqual(isLikelyPersonName('About Us'), false, 'Nav label "About ..." rejected');
+assertEqual(isLikelyPersonName('email (opens in new window)'), false, 'Share link text rejected');
+assertEqual(isLikelyPersonName('The daily show'), false, 'Only one capital letter rejected');
+assertEqual(isLikelyPersonName(''), false, 'Empty string rejected');
+assertEqual(isLikelyPersonName('A B C D E'), false, 'Five words rejected');
+
+console.log('\n--- joinAuthorNames ---');
+assertEqual(joinAuthorNames(['Mike Allen']), 'Mike Allen', 'Single author');
+assertEqual(joinAuthorNames(['Mike Allen', 'Zachary Basu']), 'Mike Allen and Zachary Basu', 'Two authors joined with "and"');
+assertEqual(joinAuthorNames(['A One', 'B Two', 'C Three']), 'A One, B Two and C Three', 'Three authors: comma then "and"');
+assertEqual(joinAuthorNames(['A One', 'B Two', 'C Three', 'D Four', 'E Five']), 'A One, B Two, C Three and D Four', 'Capped at four names');
+assertEqual(joinAuthorNames([]), null, 'Empty list returns null');
 
 console.log(`\n${testsPassed} passed, ${testsFailed} failed`);
 process.exit(testsFailed > 0 ? 1 : 0);
