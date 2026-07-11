@@ -6,6 +6,17 @@ console.log("[Twitter Shortcuts] Loading...");
 let recentKeys = '';
 let keyTimeout = null;
 
+// True when this content script instance was orphaned by an extension
+// reload/update. Orphaned instances keep their DOM listeners, so without this
+// check shortcuts fire twice (once here, once in the fresh instance).
+function isOrphanedInstance() {
+    try {
+        return !chrome.runtime?.id;
+    } catch (e) {
+        return true;
+    }
+}
+
 // Track mouse position for finding tweet under cursor
 let lastMouseX = 0;
 let lastMouseY = 0;
@@ -17,6 +28,7 @@ document.addEventListener('mousemove', (e) => {
 
 // Listen for keystrokes to detect ";c" and ";a" sequences
 document.addEventListener('keydown', (e) => {
+    if (isOrphanedInstance()) return;
     // Don't trigger if user is typing in an input field
     const activeEl = document.activeElement;
     const isTyping = activeEl.tagName === 'INPUT' ||
@@ -73,6 +85,7 @@ document.addEventListener('keydown', (e) => {
 
 // Alt+A, Alt+C, and Alt+S shortcuts
 document.addEventListener('keydown', (e) => {
+    if (isOrphanedInstance()) return;
     // Alt+C - copy tweet text only (current tweet, not OP)
     if (e.altKey && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();

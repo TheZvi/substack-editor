@@ -13,6 +13,20 @@ window.__substackEditorContentScriptLoaded = true;
 // Tracks whether the page-context TransformController has announced itself
 let transformControllerReady = false;
 
+// True when this content script instance was orphaned by an extension
+// reload/update. Chrome leaves orphaned instances' DOM listeners attached and
+// the new injection runs in a fresh isolated world (so the load guard above
+// doesn't see it) — without this check every keyboard shortcut fires twice
+// (e.g. Alt+V pasting the tweet two times). Orphans are detectable because
+// chrome.runtime.id disappears when the extension context is invalidated.
+function isOrphanedInstance() {
+    try {
+        return !chrome.runtime?.id;
+    } catch (e) {
+        return true;
+    }
+}
+
 // Listen for messages from the extension
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
    // Ping handler - used to check if content script is running
@@ -194,6 +208,7 @@ function setupBlockquoteListener(editor) {
 
     // Use keydown to intercept BEFORE Substack processes it
     editor.addEventListener('keydown', (e) => {
+        if (isOrphanedInstance()) return;
         // Only care about space key
         if (e.key !== ' ' && e.code !== 'Space') return;
 
@@ -306,6 +321,7 @@ function setupSmartPaste(editor) {
     let keyTimeout = null;
 
     editor.addEventListener('keydown', (e) => {
+        if (isOrphanedInstance()) return;
         // Check for Alt+V shortcut
         if (e.altKey && (e.key === 'v' || e.key === 'V')) {
             console.log("[Smart Paste] Alt+V detected");
@@ -657,6 +673,7 @@ function setupHeaderToggle(editor) {
     console.log("[Header Toggle] Setting up F4 listener");
 
     document.addEventListener('keydown', (e) => {
+        if (isOrphanedInstance()) return;
         if (e.key === 'F4') {
             e.preventDefault();
             e.stopPropagation();
@@ -783,6 +800,7 @@ async function toggleHeader4() {
 // ============================================================================
 
 document.addEventListener('keydown', (e) => {
+    if (isOrphanedInstance()) return;
     // Alt+S - copy page URL
     if (e.altKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
