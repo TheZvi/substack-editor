@@ -10,8 +10,16 @@ async function loadRules() {
         console.log("Loading rules and checking storage");
         const response = await fetch(chrome.runtime.getURL('linkify/default-rules.json'));
         const data = await response.json();
-        const { overrides = {}, userRules = [] } = await chrome.storage.sync.get(['overrides', 'userRules']);
-        
+        // Rules live in storage.local (sync's 8KB-per-item cap broke saves —
+        // see storage-controller.js). Fall back to sync only when local has
+        // never been populated (pre-migration state).
+        let { overrides, userRules } = await chrome.storage.local.get(['overrides', 'userRules']);
+        if (overrides === undefined && userRules === undefined) {
+            ({ overrides, userRules } = await chrome.storage.sync.get(['overrides', 'userRules']));
+        }
+        overrides = overrides || {};
+        userRules = userRules || [];
+
         // Filter out disabled rules and combine with user rules
         const defaultRules = data.linkRules.filter(rule => !overrides[rule.target]?.disabled);
         return [...defaultRules, ...userRules];

@@ -165,10 +165,10 @@ document.querySelectorAll('.rules-list').forEach(list => {
                     } else {
                         // Keep one, delete others
                         const keptRule = matchingRules[0];
-                        const newRules = userRules.filter(r => 
+                        const newRules = userRules.filter(r =>
                             r.target !== target || r === matchingRules[0]
                         );
-                        await chrome.storage.sync.set({ userRules: newRules });
+                        await chrome.storage.local.set({ userRules: newRules });
                     }
                 } else {
                     // Single rule - normal delete confirmation
@@ -217,6 +217,67 @@ document.querySelectorAll('.rules-list').forEach(list => {
         }
     });
 
+    // Promote button: download a merged default-rules.json (current defaults
+    // + all custom rules). Saving it over linkify/default-rules.json in the
+    // extension folder makes the custom rules permanent (they travel with the
+    // repo via git). After reloading the extension, "Clean Up Promoted Rules"
+    // removes the now-duplicated custom rules from storage.
+    document.getElementById('promote-rules')?.addEventListener('click', async () => {
+        if (this.promoting) return;
+        this.promoting = true;
+        try {
+            const merged = await RuleStorage.exportAllRules();
+            const count = JSON.parse(merged).linkRules.length;
+            const blob = new Blob([merged], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'default-rules.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showStatus(`Downloaded default-rules.json (${count} rules). ` +
+                `Save it over linkify/default-rules.json in the extension folder, ` +
+                `reload the extension, then click "Clean Up Promoted Rules".`);
+        } catch (error) {
+            console.error('Error promoting rules:', error);
+            showStatus('Error promoting rules: ' + error.message, true);
+        } finally {
+            this.promoting = false;
+        }
+    });
+
+    // Cleanup button: delete custom rules whose target+url now exist in the
+    // permanent defaults. Safe to run any time — it only removes duplicates.
+    document.getElementById('cleanup-promoted')?.addEventListener('click', async () => {
+        if (this.cleaning) return;
+        this.cleaning = true;
+        try {
+            const defaults = await RuleStorage.getDefaultRules();
+            const userRules = await RuleStorage.getUserRules();
+            const isPromoted = (rule) => defaults.some(d =>
+                d.target === rule.target && d.url === rule.url);
+            const remaining = userRules.filter(r => !isPromoted(r));
+            const removedCount = userRules.length - remaining.length;
+            if (removedCount === 0) {
+                showStatus('No custom rules duplicate the permanent defaults — nothing to clean up.');
+                return;
+            }
+            if (confirm(`Remove ${removedCount} custom rule${removedCount > 1 ? 's' : ''} that ` +
+                `already exist in the permanent defaults? (${remaining.length} will remain.)`)) {
+                await chrome.storage.local.set({ userRules: remaining });
+                await loadRules();
+                showStatus(`Cleaned up ${removedCount} promoted rule${removedCount > 1 ? 's' : ''}.`);
+            }
+        } catch (error) {
+            console.error('Error cleaning up promoted rules:', error);
+            showStatus('Error cleaning up: ' + error.message, true);
+        } finally {
+            this.cleaning = false;
+        }
+    });
+
     // Import button
 document.getElementById('import-rules')?.addEventListener('click', async () => {
     console.log('Import clicked');
@@ -248,8 +309,8 @@ document.getElementById('import-rules')?.addEventListener('click', async () => {
                     throw new Error('Invalid file format - must contain linkRules array');
                 }
                 
-                // Get current rules
-                const { userRules = [] } = await chrome.storage.sync.get('userRules');      
+                // Get current rules (via RuleStorage so migration has run)
+                const userRules = await RuleStorage.getUserRules();
                 const defaultRulesResponse = await fetch(chrome.runtime.getURL('linkify/default-rules.json'));
                 const defaultRulesData = await defaultRulesResponse.json();
                 const defaultRules = defaultRulesData.linkRules;
@@ -267,7 +328,7 @@ document.getElementById('import-rules')?.addEventListener('click', async () => {
                 
                 // Confirm import
                 if (confirm(`Import ${newRules.length} new rules?`)) {
-                    await chrome.storage.sync.set({
+                    await chrome.storage.local.set({
                         userRules: [...userRules, ...newRules]
                     });
                     await loadRules();  // Refresh display

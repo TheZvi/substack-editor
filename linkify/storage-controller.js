@@ -10,13 +10,41 @@ if (!window.RuleStorage) {
             return data.linkRules;
         }
 
+        // Linkify rules live in chrome.storage.local, NOT sync: sync caps each
+        // item at 8KB (Resource::kQuotaBytesPerItem) and a growing userRules
+        // array exceeds that, making every save fail. local allows ~10MB.
+        // One-time migration copies any pre-existing sync data into local;
+        // the sync copy is left in place as a passive backup but is never
+        // written again.
+        static async migrateFromSync() {
+            if (this._migrated) return;
+            const local = await chrome.storage.local.get(['userRules', 'overrides']);
+            const toSet = {};
+            if (local.userRules === undefined || local.overrides === undefined) {
+                const synced = await chrome.storage.sync.get(['userRules', 'overrides']);
+                if (local.userRules === undefined && synced.userRules) {
+                    toSet.userRules = synced.userRules;
+                }
+                if (local.overrides === undefined && synced.overrides) {
+                    toSet.overrides = synced.overrides;
+                }
+                if (Object.keys(toSet).length > 0) {
+                    await chrome.storage.local.set(toSet);
+                    console.log("[Linkify Storage] Migrated from sync to local:", Object.keys(toSet).join(', '));
+                }
+            }
+            this._migrated = true;
+        }
+
         static async getUserRules() {
-            const { userRules = [] } = await chrome.storage.sync.get('userRules');
+            await this.migrateFromSync();
+            const { userRules = [] } = await chrome.storage.local.get('userRules');
             return userRules;
         }
 
         static async getOverrides() {
-            const { overrides = {} } = await chrome.storage.sync.get('overrides');
+            await this.migrateFromSync();
+            const { overrides = {} } = await chrome.storage.local.get('overrides');
             return overrides;
         }
 
@@ -43,18 +71,18 @@ if (!window.RuleStorage) {
         static async addUserRule(rule) {
             const userRules = await this.getUserRules();
             userRules.push(rule);
-            await chrome.storage.sync.set({ userRules });
+            await chrome.storage.local.set({ userRules });
         }
 
         static async deleteUserRule(target) {
             const userRules = await this.getUserRules();
             const newRules = userRules.filter(rule => rule.target !== target);
-            await chrome.storage.sync.set({ userRules: newRules });
+            await chrome.storage.local.set({ userRules: newRules });
         }
         static async updateOverride(target, override) {
             const overrides = await this.getOverrides();
             overrides[target] = override;
-            await chrome.storage.sync.set({ overrides });
+            await chrome.storage.local.set({ overrides });
         }
 
         static async exportAllRules() {
@@ -81,7 +109,7 @@ if (!window.RuleStorage) {
                     }
                 }
             }
-            await chrome.storage.sync.set({ overrides });
+            await chrome.storage.local.set({ overrides });
         }
     }
 }
