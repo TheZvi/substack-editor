@@ -21,6 +21,7 @@ A Chrome extension that helps writers format, edit, and publish content on Subst
 - Website annotations (auto-append site abbreviation when no author annotation matches)
 - PDF copy with formatting preservation (removes footnotes/page numbers)
 - Last closed tab URL copy (Alt+Z)
+- Coverage check ("Have I covered this?") — highlights any page's paragraphs by prior DWATV coverage, with matches in a Chrome side panel
 
 ## Directory Structure
 
@@ -51,6 +52,12 @@ substack-editor/
 │
 ├── universal/
 │   └── quote-copy.js                 # Universal Alt+A quote copy for any website
+│
+├── coverage/
+│   ├── coverage-content.js           # Page highlighting by coverage status (injected on demand)
+│   ├── sidepanel.html                # Chrome side panel UI
+│   ├── sidepanel.js                  # Side panel logic (matches display, selection search)
+│   └── sidepanel.css                 # Side panel styles (mirrors covered_web.py webui)
 │
 ├── author-annotations/
 │   └── ui/
@@ -180,8 +187,8 @@ async handleTransform(inputText) {
 ```
 
 ### Chrome Storage
-- **`chrome.storage.local`** - Temporary data (extracted content)
-- **`chrome.storage.sync`** - User preferences (API keys, rules)
+- **`chrome.storage.local`** - Temporary data (extracted content) AND linkify rules (`userRules`, `overrides` — moved from sync because sync's 8KB-per-item quota broke rule saves; storage-controller.js migrates old sync data automatically)
+- **`chrome.storage.sync`** - User preferences (API keys, annotations)
 
 ### Rule Configuration Format
 ```javascript
@@ -420,13 +427,14 @@ This convention ensures readers can distinguish between the original tweet text 
 #### Author Detection Priority
 1. **Blockquote author**: `<cite>` element, `— Name` pattern, footer/figcaption
 2. **Comment author**: `.author`, `.username`, `[data-author]`, etc.
-3. **Page author**: `<meta name="author">`, JSON-LD `author`, byline selectors
+3. **Page author**: body-text byline ("By Author", incl. all-caps like Politico), `<meta name="author">`, JSON-LD `author`, byline selectors, author-profile links (`/authors/`, `/by/`, `/staff/`, etc. — the main path that works on archive.today snapshots, which strip meta/JSON-LD/classes but keep hrefs), `twitter:creator` last (skipped when it's the site's own handle)
 4. **LLM fallback**: Gemini analyzes surrounding HTML context
 5. **Last resort**: Page title
 
 #### URL Detection
 - Prefers `cite` attribute from blockquotes when present
 - Otherwise uses current page URL (cleaned of tracking params)
+- On archive snapshots (archive.is/.ph/.today/etc. and web.archive.org), the quote links to the ORIGINAL article URL (extracted from the snapshot URL, `link[rel=canonical]` or archive.today's "saved from" box), and website annotations key off the original domain (an archived Axios article gets the axios.com annotation). In-page links rewritten as `archive.is/o/<code>/<original>` are unwrapped.
 
 #### Key Files
 - `universal/quote-copy.js` - Author detection and clipboard logic
@@ -565,6 +573,59 @@ Hover over a tweet and press Alt+T to open the annotations page with the author'
 - `twitter/twitter-shortcuts.js` - `getAuthorAnnotation()`, `openAnnotationForCurrentTweet()`
 - `universal/quote-copy.js` - `getAuthorAnnotation()`, `getWebsiteAnnotation()`
 - `content.js` - Smart paste annotation handling (lines 488-493)
+
+---
+
+### Coverage Check ("Have I covered this?")
+
+Highlights any web page's paragraphs by whether Zvi has already covered the
+topic in the DWATV archive, using the local covered server from the `writing`
+repo (`python covered_web.py` → http://127.0.0.1:8377).
+
+#### Usage
+1. Start the server: `python covered_web.py` in `C:\Users\Zvi Mowshowitz\writing`
+2. Right-click any page → **"Check coverage on this page"** (opens the side
+   panel and starts analysis), or open the side panel and hit **Analyze page**
+3. Paragraph highlighting: **green** = new, **yellow** = adjacent (`context` /
+   `keyword-match`), **red** = covered (near-verbatim / verified no-new-info).
+   Unmarked = under 20 words (server skips those).
+4. Click a highlighted paragraph, or select ≥30 chars of text anywhere, to see
+   prior-coverage matches in the side panel (similarity score, post link, date,
+   expandable section text, copy cite / copy link)
+5. Optional **verify** checkbox: server has Claude judge each `context`
+   paragraph and upgrade it to `covered` if it adds no new information (slow)
+
+#### Architecture
+- `coverage/coverage-content.js` — injected on demand (never auto-runs).
+  Extracts leaf `p`/`li`/`blockquote` blocks (≥20 words, skipping
+  nav/header/footer/aside) from `article`/`main`/body, normalizes whitespace,
+  sends batches of 12 paragraphs to `/api/check`, and applies highlight classes
+  (inset box-shadow edge bar + low-alpha background — no layout shift).
+  Whitespace normalization guarantees the server's paragraph splitter returns
+  the batch 1:1, so statuses map back by index.
+- `coverage/sidepanel.*` — Chrome side panel (`chrome.sidePanel`), tracks the
+  active tab, filters messages by `sender.tab.id`. No inline scripts (MV3 CSP).
+- `background.js` — `coverage-check` context menu (calls `sidePanel.open()`
+  synchronously in the click handler — user-gesture requirement), injects the
+  content script, and proxies all server calls via the `covered-api` message
+  (content scripts on https pages can't fetch http://localhost — mixed content;
+  the service worker can, via the `http://127.0.0.1:8377/*` host permission).
+
+#### Server API used (from covered_web.py in the writing repo)
+- `GET /api/status` — index stats (posts/chunks/vectors)
+- `POST /api/check {text, verify}` — classify paragraphs (`new` / `context` /
+  `keyword-match` / `covered` / `skipped`) with up to 8 matches each
+- `GET /api/search?q=&k=` — hybrid search (used for text selections)
+- `GET /api/section?slug=&name=` — full section text for a match
+
+#### Message actions
+| Action | Direction | Purpose |
+|--------|-----------|---------|
+| `covered-api` | content/panel → background | Proxy fetch to local server |
+| `coverage-run-request` | panel → background | Inject + start analysis on a tab |
+| `coverage-run`, `coverage-ping`, `coverage-get-state`, `coverage-clear` | background/panel → content | Control the page script |
+| `coverage-progress`, `coverage-done`, `coverage-error` | content → panel | Analysis status |
+| `coverage-show`, `coverage-selection` | content → panel | Clicked paragraph / selected text |
 
 ---
 
@@ -735,11 +796,20 @@ node tests/twitterShortcuts.test.js
 # Smart paste tests (233 tests)
 node tests/smartPaste.test.js
 
-# Transform controller tests (143 tests)
+# Transform controller tests (175 tests)
 node tests/transformController.test.js
 
 # PDF copy tests (112 tests)
 node tests/pdfCopy.test.js
+
+# Author byline detection tests (78 tests)
+node tests/authorDetection.test.js
+
+# Archive snapshot URL tests (23 tests)
+node tests/archiveUrl.test.js
+
+# Remove Blank Sections predicate tests (17 tests)
+node tests/removeBlanks.test.js
 
 # Clean link sources tests (33 tests)
 node tests/cleanLinkSources.test.js
@@ -776,6 +846,7 @@ The extension requires access to:
 - `https://substackcdn.com/*`, `https://*.substackcdn.com/*` - Substack CDN (images)
 - `https://docs.google.com/*` - Google Docs
 - `https://www.googleapis.com/*`, `https://oauth2.googleapis.com/*` - Google APIs
+- `http://127.0.0.1:8377/*` - Local covered server (coverage check)
 
 ## Chrome Permissions
 
@@ -786,6 +857,7 @@ The extension requires access to:
 - `sessions` - Access recently closed tabs (Alt+Z)
 - `identity` - Google OAuth for Docs API
 - `contextMenus`, `notifications`, `webNavigation` - UI features
+- `sidePanel` - Coverage check matches panel
 
 ## Important Considerations for AI Assistants
 
