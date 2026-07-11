@@ -1099,6 +1099,22 @@ function removeBlanks() {
         const removedSections = [];
         let trailingWhitespaceRemoved = 0;
 
+        // A block is "visually empty" when it has no visible text and no
+        // meaningful embedded content. Zero-width characters don't count as
+        // text (trim() leaves them, and the blockquote shortcut inserts
+        // U+200B placeholders). Blocks holding images/embeds/dividers are NOT empty
+        // even though their textContent is '' — deleting them would eat
+        // captionless images. Headers and dividers themselves are boundaries,
+        // never whitespace. (Mirrored in tests/removeBlanks.test.js.)
+        const ZERO_WIDTH = /[\u200B\u200C\u200D\uFEFF]/g;
+        const BOUNDARY_TAGS = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR'];
+        const isVisuallyEmpty = (el) => {
+            if (!el) return false;
+            if (BOUNDARY_TAGS.includes(el.tagName)) return false;
+            if (el.querySelector('img, figure, iframe, video, audio, embed, object, hr')) return false;
+            return el.textContent.replace(ZERO_WIDTH, '').trim() === '';
+        };
+
         // Get and filter headers
         const headers = document.querySelectorAll('h1, h2, h3, h4');
         console.log("Found headers:", headers.length);
@@ -1117,12 +1133,11 @@ function removeBlanks() {
 
         // Check each section for content
         headersArray.forEach(header => {
-            console.log("Checking header:", header.textContent);
             let isEmpty = true;
             let nextSibling = header.nextElementSibling;
 
             while (nextSibling && !['H1', 'H2', 'H3', 'H4'].includes(nextSibling.tagName)) {
-                if (nextSibling.textContent.trim() !== "") {
+                if (!isVisuallyEmpty(nextSibling)) {
                     isEmpty = false;
                     break;
                 }
@@ -1133,26 +1148,44 @@ function removeBlanks() {
             if (isEmpty) {
                 console.log("Found empty section:", header.textContent);
                 removedSections.push(header.textContent.trim());
+                // Capture the section body BEFORE removing the header —
+                // a detached header has no siblings
+                let bodyEl = header.nextElementSibling;
                 header.remove();
-                nextSibling = header.nextElementSibling;
-                while (nextSibling && !['H1', 'H2', 'H3', 'H4'].includes(nextSibling.tagName)) {
-                    let toRemove = nextSibling;
-                    nextSibling = nextSibling.nextElementSibling;
+                while (bodyEl && !['H1', 'H2', 'H3', 'H4'].includes(bodyEl.tagName)) {
+                    let toRemove = bodyEl;
+                    bodyEl = bodyEl.nextElementSibling;
                     toRemove.remove();
                 }
             }
         });
 
-        // Remove trailing whitespace at end of sections (empty paragraphs before headers)
-        const allHeaders = document.querySelectorAll('h1, h2, h3, h4');
-        allHeaders.forEach(header => {
-            // Look backwards from each header and remove empty elements
-            let prevSibling = header.previousElementSibling;
-            while (prevSibling && prevSibling.textContent.trim() === '' &&
-                   !['H1', 'H2', 'H3', 'H4'].includes(prevSibling.tagName)) {
-                console.log("Removing trailing whitespace before:", header.textContent?.substring(0, 30));
+        // Remove dead whitespace at the end of sections: empty blocks
+        // immediately before every section boundary (headers AND horizontal
+        // rule dividers). Scoped to the editor so Substack UI is untouched.
+        const boundaries = document.querySelectorAll(
+            '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, ' +
+            '.ProseMirror h5, .ProseMirror h6, .ProseMirror hr'
+        );
+        boundaries.forEach(boundary => {
+            let prevSibling = boundary.previousElementSibling;
+            while (isVisuallyEmpty(prevSibling)) {
+                console.log("Removing trailing whitespace before:", boundary.textContent?.substring(0, 30) || boundary.tagName);
                 let toRemove = prevSibling;
                 prevSibling = prevSibling.previousElementSibling;
+                toRemove.remove();
+                trailingWhitespaceRemoved++;
+            }
+        });
+
+        // Remove trailing empty paragraphs inside blockquotes — they render
+        // as dead space at the end of the quote
+        document.querySelectorAll('.ProseMirror blockquote').forEach(bq => {
+            let last = bq.lastElementChild;
+            while (isVisuallyEmpty(last)) {
+                console.log("Removing trailing whitespace at end of blockquote");
+                let toRemove = last;
+                last = last.previousElementSibling;
                 toRemove.remove();
                 trailingWhitespaceRemoved++;
             }
@@ -1162,8 +1195,7 @@ function removeBlanks() {
         const editor = document.querySelector('.ProseMirror');
         if (editor) {
             let lastChild = editor.lastElementChild;
-            while (lastChild && lastChild.textContent.trim() === '' &&
-                   !['H1', 'H2', 'H3', 'H4'].includes(lastChild.tagName)) {
+            while (isVisuallyEmpty(lastChild)) {
                 console.log("Removing trailing whitespace at end of document");
                 let toRemove = lastChild;
                 lastChild = lastChild.previousElementSibling;
