@@ -14,7 +14,8 @@
     "notifications",
     "webNavigation",
     "identity",
-    "sessions"
+    "sessions",
+    "sidePanel"
   ],
   "oauth2": {
     "client_id": "633231389022-1g8alhfppclvipc7ndqllubltkr0ap1b.apps.googleusercontent.com",
@@ -36,7 +37,8 @@
     "https://*.substackcdn.com/*",
     "https://docs.google.com/*",
     "https://www.googleapis.com/*",
-    "https://oauth2.googleapis.com/*"
+    "https://oauth2.googleapis.com/*",
+    "http://127.0.0.1:8377/*"
   ],
   "commands": {        
     "transform-text": {
@@ -110,6 +112,9 @@
   }],
   "background": {
     "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "coverage/sidepanel.html"
   },
   "action": {
     "default_popup": "popup.html"

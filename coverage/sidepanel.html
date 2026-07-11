@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Have I covered this?</title>
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<header>
+  <h1>Have I covered this?</h1>
+  <span id="index-status" class="muted">connecting…</span>
+</header>
+
+<div class="toolbar">
+  <button id="analyze" class="go">Analyze page</button>
+  <label class="verify-label" title="Slower: Claude reads each flagged paragraph and its matches, and marks it covered only if it adds no new information">
+    <input type="checkbox" id="verify"> verify
+  </label>
+</div>
+
+<div id="progress" class="progress" hidden>
+  <div id="progress-bar" class="progress-bar"></div>
+</div>
+<div id="summary" class="summary"></div>
+
+<div id="notice" class="notice" hidden></div>
+
+<div id="context" class="context" hidden>
+  <div class="context-top">
+    <span id="context-tag" class="tag"></span>
+    <span id="context-label" class="muted"></span>
+  </div>
+  <div id="context-text" class="context-text"></div>
+  <div id="context-verdict" class="verdict" hidden></div>
+</div>
+
+<div id="matches">
+  <p class="muted hint">Right-click a page → “Check coverage on this page”, or hit Analyze.
+  Then click a highlighted paragraph — or select any text — to see prior coverage here.</p>
+</div>
+
+<footer>
+  <span class="dot dot-new"></span> new ·
+  <span class="dot dot-context"></span> adjacent ·
+  <span class="dot dot-covered"></span> covered ·
+  unmarked = too short
+</footer>
+
+<div class="toast" id="toast">copied</div>
+<script src="sidepanel.js"></script>
+</body>
+</html>

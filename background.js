@@ -7,6 +7,11 @@ chrome.runtime.onInstalled.addListener(() => {
       title: "Reformat Selected Text",
       contexts: ["selection"]
   });
+  chrome.contextMenus.create({
+      id: "coverage-check",
+      title: "Check coverage on this page",
+      contexts: ["page", "selection"]
+  });
 });
 
 // Menu clicker
@@ -493,6 +498,86 @@ async function openUrlInTabGroup(url, tabGroupName, originalWindowId, active = f
     return { success: false, error: error.message };
   }
 }
+
+// ============================================================================
+// Coverage Check ("Have I covered this?") - side panel + local server proxy
+// ============================================================================
+
+// Local covered_web.py server (in the writing folder). The extension talks to
+// it from here because content scripts on https pages can't fetch http://
+// localhost (mixed content), while the service worker can (host permission).
+const COVERED_API_BASE = 'http://127.0.0.1:8377';
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== 'coverage-check' || !tab?.id) return;
+  // Must be called synchronously in the click handler to count as a user gesture
+  chrome.sidePanel.open({ tabId: tab.id })
+    .catch(err => console.error('[Coverage] sidePanel.open failed:', err));
+  startCoverageRun(tab.id, false)
+    .catch(err => console.error('[Coverage] Failed to start analysis:', err));
+});
+
+/**
+ * Inject the coverage content script (if not already present) and kick off
+ * page analysis.
+ */
+async function startCoverageRun(tabId, verify) {
+  let alive = false;
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: 'coverage-ping' });
+    alive = true;
+  } catch (e) {
+    console.log('[Coverage] Content script not present, injecting...');
+  }
+
+  if (!alive) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['coverage/coverage-content.js']
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+
+  await chrome.tabs.sendMessage(tabId, { action: 'coverage-run', verify: !!verify });
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Generic proxy to the covered server for content script + side panel
+  if (request.action === 'covered-api') {
+    (async () => {
+      try {
+        const options = { method: request.method || 'GET', headers: {} };
+        if (request.body !== undefined) {
+          options.headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(request.body);
+        }
+        const response = await fetch(COVERED_API_BASE + request.path, options);
+        if (!response.ok) {
+          const errorText = await response.text();
+          sendResponse({ success: false, error: `covered server ${response.status}: ${errorText.slice(0, 300)}` });
+          return;
+        }
+        sendResponse({ success: true, data: await response.json() });
+      } catch (error) {
+        // fetch() rejects (TypeError) when the server isn't running
+        sendResponse({
+          success: false,
+          connectionFailed: true,
+          error: `Could not reach the covered server at ${COVERED_API_BASE}`
+        });
+      }
+    })();
+    return true; // Keep channel open for async response
+  }
+
+  // Side panel "Analyze page" button
+  if (request.action === 'coverage-run-request') {
+    startCoverageRun(request.tabId, request.verify)
+      .then(() => sendResponse({ success: true }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async response
+  }
+});
 
 // ============================================================================
 // Universal Quote Copy - LLM Author Detection
