@@ -1047,6 +1047,15 @@ function isLikelyJobTitle(text) {
     return JOB_TITLE_PATTERN.test(text.trim());
 }
 
+// Wire services and agency bylines — never a person. Syndicated pages (e.g.
+// usnews.com running Reuters copy) show "By Reuters" above the human byline
+// ("By Daniel Wiessner"), so these are skipped rather than accepted.
+const WIRE_SERVICE_PATTERN = /^(the\s+)?(reuters|associated press|ap|afp|agence france[- ]presse|bloomberg|staff(\s+reports?)?)$/i;
+
+function isWireServiceName(text) {
+    return WIRE_SERVICE_PATTERN.test(text.trim());
+}
+
 // Some sites (e.g. politico.com) render bylines in all caps ("By DANA NICKEL"),
 // either literally or via CSS text-transform, which innerText reflects.
 // Convert to title case so validation and output treat it as a normal name.
@@ -1074,15 +1083,17 @@ function extractBylineFromBodyText(bodyText) {
     // Prefer the explicit "By AuthorName" pattern first — it's more specific than
     // "line before Published" and avoids grabbing subtitle lines like "Senior Reporter"
     // that appear between the byline and the publication date (e.g. sfstandard.com).
+    // Iterate every "By X" line rather than stopping at the first: syndicated
+    // pages carry a wire byline ("By Reuters") above the human author's.
     const earlyText = bodyText.substring(0, 3000);
-    const byLineMatch = earlyText.match(/\n[Bb]y ([^\n]{4,120})\s*\n/);
-    if (byLineMatch) {
+    for (const byLineMatch of earlyText.matchAll(/\n[Bb]y ([^\n]{4,120})(?=\n)/g)) {
         let potentialByline = byLineMatch[1].trim();
         // All-caps byline (Politico style "By DANA NICKEL") — title-case it so the
         // capWords validation below accepts it and the output reads as a name.
         if (isAllCapsName(potentialByline)) {
             potentialByline = titleCaseAllCapsName(potentialByline);
         }
+        if (isWireServiceName(potentialByline)) continue;
         const capWords = potentialByline.match(/\b[A-Z][a-z]+/g);
         if (capWords && capWords.length >= 2 && /^[A-Z]/.test(potentialByline) &&
             !isLikelyJobTitle(potentialByline)) {
@@ -1105,7 +1116,7 @@ function extractBylineFromBodyText(bodyText) {
         if (isAllCapsName(candidate)) {
             candidate = titleCaseAllCapsName(candidate);
         }
-        if (isLikelyJobTitle(candidate)) continue;
+        if (isLikelyJobTitle(candidate) || isWireServiceName(candidate)) continue;
         const words = candidate.split(/[\s,]+/).filter(w => w);
         const capWords = words.filter(w => /^[A-Z]/.test(w));
         const isLikelyName = words.length >= 2 && words.length <= 8 &&
@@ -1123,7 +1134,7 @@ function extractBylineFromBodyText(bodyText) {
             potentialByline = titleCaseAllCapsName(potentialByline);
         }
         potentialByline = potentialByline.replace(/\s+in\s+[A-Z][a-zA-Z\s,]+$/, '');
-        if (isLikelyJobTitle(potentialByline)) return null;
+        if (isLikelyJobTitle(potentialByline) || isWireServiceName(potentialByline)) return null;
         const words = potentialByline.split(/[\s,]+/).filter(w => w);
         const capWords = words.filter(w => /^[A-Z]/.test(w));
         const isLikelyName = words.length >= 2 && words.length <= 8 &&

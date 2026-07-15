@@ -802,7 +802,7 @@ node tests/transformController.test.js
 # PDF copy tests (112 tests)
 node tests/pdfCopy.test.js
 
-# Author byline detection tests (78 tests)
+# Author byline detection tests (91 tests)
 node tests/authorDetection.test.js
 
 # Archive snapshot URL tests (23 tests)

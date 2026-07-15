@@ -28,6 +28,12 @@ function isLikelyJobTitle(text) {
     return JOB_TITLE_PATTERN.test(text.trim());
 }
 
+const WIRE_SERVICE_PATTERN = /^(the\s+)?(reuters|associated press|ap|afp|agence france[- ]presse|bloomberg|staff(\s+reports?)?)$/i;
+
+function isWireServiceName(text) {
+    return WIRE_SERVICE_PATTERN.test(text.trim());
+}
+
 function isAllCapsName(name) {
     const withoutConnectors = name.replace(/\b(and)\b/g, '');
     return /[A-Z]/.test(withoutConnectors) && !/[a-z]/.test(withoutConnectors);
@@ -44,12 +50,12 @@ function extractBylineFromBodyText(bodyText) {
     if (!bodyText) return null;
 
     const earlyText = bodyText.substring(0, 3000);
-    const byLineMatch = earlyText.match(/\n[Bb]y ([^\n]{4,120})\s*\n/);
-    if (byLineMatch) {
+    for (const byLineMatch of earlyText.matchAll(/\n[Bb]y ([^\n]{4,120})(?=\n)/g)) {
         let potentialByline = byLineMatch[1].trim();
         if (isAllCapsName(potentialByline)) {
             potentialByline = titleCaseAllCapsName(potentialByline);
         }
+        if (isWireServiceName(potentialByline)) continue;
         const capWords = potentialByline.match(/\b[A-Z][a-z]+/g);
         if (capWords && capWords.length >= 2 && /^[A-Z]/.test(potentialByline) &&
             !isLikelyJobTitle(potentialByline)) {
@@ -72,7 +78,7 @@ function extractBylineFromBodyText(bodyText) {
         if (isAllCapsName(candidate)) {
             candidate = titleCaseAllCapsName(candidate);
         }
-        if (isLikelyJobTitle(candidate)) continue;
+        if (isLikelyJobTitle(candidate) || isWireServiceName(candidate)) continue;
         const words = candidate.split(/[\s,]+/).filter(w => w);
         const capWords = words.filter(w => /^[A-Z]/.test(w));
         const isLikelyName = words.length >= 2 && words.length <= 8 &&
@@ -88,7 +94,7 @@ function extractBylineFromBodyText(bodyText) {
             potentialByline = titleCaseAllCapsName(potentialByline);
         }
         potentialByline = potentialByline.replace(/\s+in\s+[A-Z][a-zA-Z\s,]+$/, '');
-        if (isLikelyJobTitle(potentialByline)) return null;
+        if (isLikelyJobTitle(potentialByline) || isWireServiceName(potentialByline)) return null;
         const words = potentialByline.split(/[\s,]+/).filter(w => w);
         const capWords = words.filter(w => /^[A-Z]/.test(w));
         const isLikelyName = words.length >= 2 && words.length <= 8 &&
@@ -457,6 +463,75 @@ assertEqual(
     null,
     'Single word above date is rejected'
 );
+
+console.log('\n--- extractBylineFromBodyText: wire-service bylines (usnews.com regression) ---');
+// usnews.com syndicating Reuters: "By Reuters" (link byline) appears above
+// the human byline "By Daniel Wiessner". The old code only examined the
+// FIRST "By X" match, so it gave up and fell through to JSON-LD, which
+// says author = Organization "Reuters".
+const usnewsText = [
+    'U.S. News',
+    'Home / News / Top News',
+    'Meta Used AI to Target Workers With Medical Conditions for Layoffs, Lawsuit Claims',
+    'By Reuters',
+    'July 14, 2026, at 9:52 a.m.',
+    'Save',
+    'A woman walks by the Meta Lab in Los Angeles. REUTERS/Daniel Cole',
+    'By Daniel Wiessner',
+    'July 14 (Reuters) - Twenty-six employees of Meta Platforms have filed a novel lawsuit.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(usnewsText),
+    'Daniel Wiessner',
+    'usnews.com: skips "By Reuters", picks "By Daniel Wiessner"'
+);
+
+const apText = [
+    'Some Paper',
+    'By Associated Press',
+    'Story intro here.',
+    'By Jane Doe',
+    'Article body.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(apText),
+    'Jane Doe',
+    '"By Associated Press" (which passes name validation) is skipped for the human byline'
+);
+
+const wireOnlyText = [
+    'Some Paper',
+    'By Reuters',
+    'Article body with no human byline anywhere.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(wireOnlyText),
+    null,
+    'Wire-only byline returns null (later detection layers handle it)'
+);
+
+const adjacentBylinesText = [
+    'Paper',
+    'By Reuters',
+    'By John Smith',
+    'Body.',
+].join('\n');
+assertEqual(
+    extractBylineFromBodyText(adjacentBylinesText),
+    'John Smith',
+    'Adjacent "By" lines: second one still matched (lookahead regex)'
+);
+
+console.log('\n--- isWireServiceName ---');
+assertEqual(isWireServiceName('Reuters'), true, 'Reuters');
+assertEqual(isWireServiceName('Associated Press'), true, 'Associated Press');
+assertEqual(isWireServiceName('The Associated Press'), true, 'The Associated Press');
+assertEqual(isWireServiceName('AP'), true, 'AP');
+assertEqual(isWireServiceName('Bloomberg'), true, 'Bloomberg');
+assertEqual(isWireServiceName('AFP'), true, 'AFP');
+assertEqual(isWireServiceName('Staff Reports'), true, 'Staff Reports');
+assertEqual(isWireServiceName('Daniel Wiessner'), false, 'Human name is not a wire service');
+assertEqual(isWireServiceName('April Smith'), false, 'Name starting with Ap- is not AP');
 
 console.log('\n--- extractBylineFromBodyText: negative cases ---');
 assertEqual(extractBylineFromBodyText(''), null, 'Empty string returns null');
