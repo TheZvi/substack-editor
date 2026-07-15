@@ -210,17 +210,21 @@ function initBlockquoteOverride() {
 // Pasting block-shaped clipboard HTML (e.g. a line copied from within the
 // editor when ProseMirror's clipboard serializer didn't run, so the clipboard
 // holds Chrome's generic <p>-wrapped HTML without data-pm-slice) splits the
-// target paragraph and leaves an empty paragraph above and below the pasted
-// content. After every paste into the editor, sweep visually-empty blocks
-// out of the pasted region, bounded by the blocks that surrounded the cursor
-// before the paste so nothing outside the paste site is touched.
+// target node and leaves artifacts: empty paragraphs above/below the pasted
+// content, and \u2014 when pasting inside a blockquote \u2014 empty blockquote shells
+// at the editor level from the quote being split. After every paste, sweep
+// visually-empty blocks (paragraphs AND blockquotes) out of the pasted
+// region: inside the target blockquote if there was one, and at the editor
+// level bounded by the blocks that surrounded the cursor before the paste,
+// so nothing outside the paste site is touched. Runs twice because
+// ProseMirror may reparse the region asynchronously.
 // ============================================================================
 
 function setupPasteWhitespaceGuard(editor) {
     console.log("[Paste Guard] Setting up listener");
 
     const isEmptyBlock = (el) => {
-        if (!el || !['P', 'DIV'].includes(el.tagName)) return false;
+        if (!el || !['P', 'DIV', 'BLOCKQUOTE'].includes(el.tagName)) return false;
         if (el.querySelector('img, figure, iframe, video, audio, embed')) return false;
         return el.textContent.replace(/[\u200B\u200C\u200D\uFEFF]/g, '').trim() === '';
     };
@@ -244,35 +248,58 @@ function setupPasteWhitespaceGuard(editor) {
             const range = sel.getRangeAt(0);
             let anchorEl = range.commonAncestorContainer;
             if (anchorEl.nodeType === Node.TEXT_NODE) anchorEl = anchorEl.parentElement;
-            const container = anchorEl?.closest?.('blockquote') || editor;
-            const targetBlock = topBlockOf(range.startContainer, container);
-            if (!targetBlock) return;
-            const beforeAnchor = targetBlock.previousElementSibling;
-            const afterAnchor = topBlockOf(range.endContainer, container)?.nextElementSibling || null;
+            const pasteBlockquote = anchorEl?.closest?.('blockquote') || null;
 
-            // Sweep after ProseMirror has applied and re-rendered the paste
-            setTimeout(() => {
+            // Editor-level anchors: the blocks surrounding the paste site's
+            // top-level block. A blockquote split shows up between these.
+            const outerStart = topBlockOf(range.startContainer, editor);
+            const outerBefore = outerStart ? outerStart.previousElementSibling : null;
+            const outerAfter = topBlockOf(range.endContainer, editor)?.nextElementSibling || null;
+
+            const sweep = () => {
                 try {
-                    if (!container.isConnected) return;
-                    let node = (beforeAnchor && beforeAnchor.isConnected)
-                        ? beforeAnchor.nextElementSibling
-                        : container.firstElementChild;
-                    const stop = (afterAnchor && afterAnchor.isConnected) ? afterAnchor : null;
                     let removed = 0;
-                    while (node && node !== stop) {
-                        const next = node.nextElementSibling;
-                        if (isEmptyBlock(node)) {
-                            node.remove();
-                            removed++;
+
+                    // 1. Inside the blockquote that was pasted into: remove
+                    // all visually-empty children (extra newlines in quotes)
+                    if (pasteBlockquote && pasteBlockquote.isConnected) {
+                        for (const child of [...pasteBlockquote.children]) {
+                            if (isEmptyBlock(child)) {
+                                child.remove();
+                                removed++;
+                            }
                         }
-                        node = next;
                     }
+
+                    // 2. Editor level, between the pre-paste anchors: remove
+                    // empty paragraphs AND empty blockquote shells left by
+                    // paste splits. Without a surviving anchor on either
+                    // side, don't guess at the region.
+                    const startNode = (outerBefore && outerBefore.isConnected)
+                        ? outerBefore.nextElementSibling
+                        : ((outerAfter && outerAfter.isConnected) ? editor.firstElementChild : null);
+                    const stop = (outerAfter && outerAfter.isConnected) ? outerAfter : null;
+                    if (startNode && (stop || (outerBefore && outerBefore.isConnected))) {
+                        let node = startNode;
+                        while (node && node !== stop) {
+                            const next = node.nextElementSibling;
+                            if (isEmptyBlock(node)) {
+                                node.remove();
+                                removed++;
+                            }
+                            node = next;
+                        }
+                    }
+
                     if (removed > 0) {
-                        console.log("[Paste Guard] Removed", removed, "empty paragraph(s) around paste");
+                        console.log("[Paste Guard] Removed", removed, "empty block(s) after paste");
                         editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
                     }
                 } catch (e) { /* ignore sweep errors */ }
-            }, 150);
+            };
+            // Twice: once after the paste lands, again after any async reparse
+            setTimeout(sweep, 150);
+            setTimeout(sweep, 600);
         } catch (e) { /* ignore */ }
     });
 }
