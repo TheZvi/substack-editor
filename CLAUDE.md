@@ -811,6 +811,9 @@ node tests/archiveUrl.test.js
 # Remove Blank Sections predicate tests (17 tests)
 node tests/removeBlanks.test.js
 
+# Paste sanitizer tests (15 tests)
+node tests/pasteSanitizer.test.js
+
 # Clean link sources tests (33 tests)
 node tests/cleanLinkSources.test.js
 

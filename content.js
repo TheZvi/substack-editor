@@ -220,6 +220,36 @@ function initBlockquoteOverride() {
 // ProseMirror may reparse the region asynchronously.
 // ============================================================================
 
+// Sanitize clipboard HTML that carries Chrome's generic serialization of a
+// Substack-editor copy (produced when ProseMirror's clipboard serializer
+// doesn't run, so there's no data-pm-slice). Its white-space:break-spaces
+// styles make ProseMirror's paste parser preserve the CF_HTML wrapper's \r\n
+// newlines as hard breaks — the reliable "two blank lines at the top" of
+// such pastes. Pure function, mirrored in tests/pasteSanitizer.test.js.
+function sanitizePastedHtml(html) {
+    let s = html;
+    // Without break-spaces/pre styles PM treats newlines as collapsible
+    // whitespace and drops them at block boundaries
+    s = s.replace(/white-space:\s*(break-spaces|pre-wrap|pre-line|pre)\s*;?\s*/gi, '');
+    // Strip the wrapper/fragment-edge newlines outright
+    s = s.replace(/(<html[^>]*>)\s+/gi, '$1')
+         .replace(/(<body[^>]*>)\s+/gi, '$1')
+         .replace(/\s+(<\/body>)/gi, '$1')
+         .replace(/\s+(<\/html>)/gi, '$1')
+         .replace(/(<!--StartFragment-->)\s+/gi, '$1')
+         .replace(/\s+(<!--EndFragment-->)/gi, '$1');
+    return s;
+}
+
+// Does clipboard HTML match the problem signature? (Substack-internal copy
+// serialized generically: no data-pm-slice, whitespace-preserving styles or
+// newlines right after the body tag.)
+function needsPasteSanitizing(html) {
+    if (!html || html.includes('data-pm-slice')) return false;
+    return /white-space:\s*(break-spaces|pre)/i.test(html) ||
+        /<body[^>]*>\s*[\r\n]/i.test(html);
+}
+
 function setupPasteWhitespaceGuard(editor) {
     console.log("[Paste Guard] Setting up listener");
 
@@ -239,9 +269,23 @@ function setupPasteWhitespaceGuard(editor) {
         return node && node.parentElement === container ? node : null;
     };
 
-    editor.addEventListener('paste', () => {
+    // Capture phase: runs before ProseMirror's own paste handler, so the
+    // sanitizing branch can take over the paste entirely when needed.
+    editor.addEventListener('paste', (e) => {
         if (isOrphanedInstance()) return;
         try {
+            // Root-cause interception: sanitize Substack-internal copies that
+            // carry the generic serialization (see sanitizePastedHtml) and
+            // insert them ourselves so ProseMirror never parses the newlines.
+            const clipboardHtml = e.clipboardData ? e.clipboardData.getData('text/html') : '';
+            if (needsPasteSanitizing(clipboardHtml)) {
+                console.log("[Paste Guard] Sanitizing generic Substack clipboard HTML");
+                e.preventDefault();
+                e.stopPropagation();
+                document.execCommand('insertHTML', false, sanitizePastedHtml(clipboardHtml));
+                // fall through: the sweep below still runs as a backstop
+            }
+
             // Capture the paste site BEFORE the browser applies the paste
             const sel = window.getSelection();
             if (!sel || sel.rangeCount === 0) return;
@@ -291,6 +335,15 @@ function setupPasteWhitespaceGuard(editor) {
                         }
                     }
 
+                    // 3. Paste at the very top of the document: leading
+                    // empty blocks are never intentional — trim them all
+                    if (!outerBefore) {
+                        while (editor.firstElementChild && isEmptyBlock(editor.firstElementChild)) {
+                            editor.firstElementChild.remove();
+                            removed++;
+                        }
+                    }
+
                     if (removed > 0) {
                         console.log("[Paste Guard] Removed", removed, "empty block(s) after paste");
                         editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
@@ -301,7 +354,7 @@ function setupPasteWhitespaceGuard(editor) {
             setTimeout(sweep, 150);
             setTimeout(sweep, 600);
         } catch (e) { /* ignore */ }
-    });
+    }, true);
 }
 
 function setupBlockquoteListener(editor) {
