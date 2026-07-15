@@ -269,6 +269,18 @@ function setupPasteWhitespaceGuard(editor) {
         return node && node.parentElement === container ? node : null;
     };
 
+    // Diagnostic: does ProseMirror's copy serializer handle copies from this
+    // editor? When it does (defaultPrevented true) the clipboard gets clean
+    // data-pm-slice HTML; when it doesn't, Chrome's generic serialization
+    // (with break-spaces styles) is what later produces blank-line artifacts
+    // on paste. Bubble phase on document = runs after PM's handler.
+    document.addEventListener('copy', (e) => {
+        if (isOrphanedInstance()) return;
+        if (!editor.contains(e.target)) return;
+        console.log("[Copy Diag] copy in editor | PM handled (defaultPrevented):", e.defaultPrevented,
+            "| target:", e.target?.nodeName);
+    });
+
     // Capture phase: runs before ProseMirror's own paste handler, so the
     // sanitizing branch can take over the paste entirely when needed.
     editor.addEventListener('paste', (e) => {
@@ -278,6 +290,13 @@ function setupPasteWhitespaceGuard(editor) {
             // carry the generic serialization (see sanitizePastedHtml) and
             // insert them ourselves so ProseMirror never parses the newlines.
             const clipboardHtml = e.clipboardData ? e.clipboardData.getData('text/html') : '';
+            // Diagnostic: what does Chrome actually hand ProseMirror?
+            if (clipboardHtml) {
+                console.log("[Paste Guard] Clipboard HTML head:",
+                    JSON.stringify(clipboardHtml.substring(0, 250)),
+                    "| pm-slice:", clipboardHtml.includes('data-pm-slice'),
+                    "| sanitize:", needsPasteSanitizing(clipboardHtml));
+            }
             if (needsPasteSanitizing(clipboardHtml)) {
                 console.log("[Paste Guard] Sanitizing generic Substack clipboard HTML");
                 e.preventDefault();
