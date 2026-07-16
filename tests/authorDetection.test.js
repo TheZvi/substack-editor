@@ -108,10 +108,22 @@ function extractBylineFromBodyText(bodyText) {
 
 const AUTHOR_PROFILE_HREF_PATTERN = /\/(authors?|by|staff|people|profiles?|contributors?|writers?|columnists?)\/[^/?#]/i;
 
+const SOCIAL_PROFILE_HREF_PATTERN = /(^|[\/.])(bsky\.app|facebook\.com|instagram\.com|threads\.net|linkedin\.com|youtube\.com|tiktok\.com|mastodon\.[a-z]+)\//i;
+
 function isAuthorProfileHref(href) {
     if (!href) return false;
     if (/^(mailto:|javascript:|tel:|#)/i.test(href)) return false;
+    if (SOCIAL_PROFILE_HREF_PATTERN.test(href)) return false;
     return AUTHOR_PROFILE_HREF_PATTERN.test(href);
+}
+
+function extractSiteNameFromTitle(title) {
+    if (!title) return null;
+    const parts = title.split('|');
+    if (parts.length < 2) return null;
+    const siteName = parts[parts.length - 1].trim();
+    if (siteName.length < 2 || siteName.length > 60) return null;
+    return siteName;
 }
 
 function cleanAuthorLinkText(text) {
@@ -127,7 +139,7 @@ function isLikelyPersonName(text) {
     const trimmed = text.trim();
     if (trimmed.length < 4 || trimmed.length > 50) return false;
     if (isLikelyJobTitle(trimmed)) return false;
-    if (/^(more|all|meet|our|the|about|other|view|see|read)\b/i.test(trimmed)) return false;
+    if (/^(more|all|meet|our|the|about|other|view|see|read|follow|share|subscribe|join|connect|contact|submit|sign)\b/i.test(trimmed)) return false;
     if (!/^[A-Z][A-Za-zÀ-ÿ.'’-]*(\s+[A-Za-zÀ-ÿ.'’-]+){1,3}$/.test(trimmed)) return false;
     return (trimmed.match(/[A-Z]/g) || []).length >= 2;
 }
@@ -606,6 +618,35 @@ assertEqual(isLikelyPersonName('email (opens in new window)'), false, 'Share lin
 assertEqual(isLikelyPersonName('The daily show'), false, 'Only one capital letter rejected');
 assertEqual(isLikelyPersonName(''), false, 'Empty string rejected');
 assertEqual(isLikelyPersonName('A B C D E'), false, 'Five words rejected');
+
+console.log('\n--- social profile links (themidasproject.com regression) ---');
+// bsky.app/profile/... matched the /profile/ author pattern and its link
+// text "Follow on Bluesky" passed name validation, so the watchtower page
+// was attributed to "Follow on Bluesky" instead of The Midas Project.
+assertEqual(
+    isAuthorProfileHref('https://bsky.app/profile/safetychanges.bsky.social'),
+    false,
+    'Bluesky profile link is not a byline'
+);
+assertEqual(isAuthorProfileHref('https://www.linkedin.com/in/someone'), false, 'LinkedIn link is not a byline');
+assertEqual(isAuthorProfileHref('https://facebook.com/profile/12345'), false, 'Facebook profile is not a byline');
+assertEqual(
+    isAuthorProfileHref('https://archive.is/o/x/https://bsky.app/profile/someone'),
+    false,
+    'Archive-wrapped social link is still excluded'
+);
+assertEqual(isAuthorProfileHref('https://www.politico.com/staff/dana-nickel'), true, 'Politico staff link still matches');
+assertEqual(isLikelyPersonName('Follow on Bluesky'), false, '"Follow on Bluesky" is not a person');
+assertEqual(isLikelyPersonName('Share This Article'), false, '"Share This Article" is not a person');
+assertEqual(isLikelyPersonName('Subscribe Now Today'), false, '"Subscribe Now Today" is not a person');
+
+console.log('\n--- extractSiteNameFromTitle ---');
+assertEqual(extractSiteNameFromTitle('xAI | The Midas Project'), 'The Midas Project', 'Title suffix after | is the site name');
+assertEqual(extractSiteNameFromTitle('A | B | The Verge'), 'The Verge', 'Last segment wins with multiple pipes');
+assertEqual(extractSiteNameFromTitle('Plain title without separator'), null, 'No pipe returns null');
+assertEqual(extractSiteNameFromTitle('Title - Site Name'), null, 'Dash separator is not used (too ambiguous)');
+assertEqual(extractSiteNameFromTitle(''), null, 'Empty title returns null');
+assertEqual(extractSiteNameFromTitle('Title |'), null, 'Empty suffix returns null');
 
 console.log('\n--- joinAuthorNames ---');
 assertEqual(joinAuthorNames(['Mike Allen']), 'Mike Allen', 'Single author');

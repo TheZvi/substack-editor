@@ -1162,9 +1162,14 @@ function extractBylineFromBodyText(bodyText) {
 // /people/ (WaPo), /author/ (WordPress and many others).
 const AUTHOR_PROFILE_HREF_PATTERN = /\/(authors?|by|staff|people|profiles?|contributors?|writers?|columnists?)\/[^/?#]/i;
 
+// Social-network profile links are follow/share buttons, not bylines
+// (e.g. bsky.app/profile/... with text "Follow on Bluesky")
+const SOCIAL_PROFILE_HREF_PATTERN = /(^|[\/.])(bsky\.app|facebook\.com|instagram\.com|threads\.net|linkedin\.com|youtube\.com|tiktok\.com|mastodon\.[a-z]+)\//i;
+
 function isAuthorProfileHref(href) {
     if (!href) return false;
     if (/^(mailto:|javascript:|tel:|#)/i.test(href)) return false;
+    if (SOCIAL_PROFILE_HREF_PATTERN.test(href)) return false;
     return AUTHOR_PROFILE_HREF_PATTERN.test(href);
 }
 
@@ -1187,9 +1192,21 @@ function isLikelyPersonName(text) {
     const trimmed = text.trim();
     if (trimmed.length < 4 || trimmed.length > 50) return false;
     if (isLikelyJobTitle(trimmed)) return false;
-    if (/^(more|all|meet|our|the|about|other|view|see|read)\b/i.test(trimmed)) return false;
+    if (/^(more|all|meet|our|the|about|other|view|see|read|follow|share|subscribe|join|connect|contact|submit|sign)\b/i.test(trimmed)) return false;
     if (!/^[A-Z][A-Za-zÀ-ÿ.'’-]*(\s+[A-Za-zÀ-ÿ.'’-]+){1,3}$/.test(trimmed)) return false;
     return (trimmed.match(/[A-Z]/g) || []).length >= 2;
+}
+
+// Extract the site name from a "Article Title | Site Name" page title.
+// Pure function for unit testing. Only the "|" separator is used — dashes
+// appear inside too many real article titles to split on safely.
+function extractSiteNameFromTitle(title) {
+    if (!title) return null;
+    const parts = title.split('|');
+    if (parts.length < 2) return null;
+    const siteName = parts[parts.length - 1].trim();
+    if (siteName.length < 2 || siteName.length > 60) return null;
+    return siteName;
 }
 
 // Join multiple authors the same way the JSON-LD path does.
@@ -1388,6 +1405,22 @@ function detectPageAuthor() {
         if (handle && handle !== siteLabel) {
             return cleanAuthorName(twitterCreator);
         }
+    }
+
+    // 8. Site/organization name. Org sites with no byline anywhere (e.g.
+    // themidasproject.com watchtower pages) are best attributed to the org
+    // itself. Prefer og:site_name; fall back to the "Title | Site Name"
+    // page-title suffix.
+    const ogSiteName = document.querySelector('meta[property="og:site_name"]')
+        ?.getAttribute('content')?.trim();
+    if (ogSiteName && ogSiteName.length > 1 && ogSiteName.length < 60) {
+        console.log("[Quote Copy] Using og:site_name as author:", ogSiteName);
+        return ogSiteName;
+    }
+    const titleSiteName = extractSiteNameFromTitle(document.title);
+    if (titleSiteName) {
+        console.log("[Quote Copy] Using page-title site name as author:", titleSiteName);
+        return titleSiteName;
     }
 
     return null;
