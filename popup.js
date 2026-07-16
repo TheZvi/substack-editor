@@ -971,33 +971,77 @@ function generateTOC(postUrl) {
             return { success: false, error: "No headers found to generate TOC" };
         }
 
-        // Check for existing TOC and extract subtitle text
+        // Check for an existing TOC. The container div's id rarely survives
+        // ProseMirror's normalization, so detect BOTH by id (fresh insert)
+        // and structurally: a header titled "Table of Contents" plus the
+        // list that follows it. Extract each entry's trailing content AS
+        // HTML so hand-added words keep their formatting, then delete the
+        // old TOC entirely.
         const tocContainerId = 'generated-toc';
-        const existingSubtitles = {};
-        const existingToc = document.getElementById(tocContainerId);
-        if (existingToc) {
-            const existingItems = existingToc.querySelectorAll('li');
-            existingItems.forEach(item => {
+        const TOC_TITLE_PATTERN = /^table of contents$/i;
+        const existingEntryExtras = {};
+
+        const collectEntryExtras = (scopeEl) => {
+            if (!scopeEl) return;
+            scopeEl.querySelectorAll('li').forEach(item => {
                 const link = item.querySelector('a');
-                if (link) {
-                    // Get the link text (the section title)
-                    const linkText = link.textContent.trim();
-                    // Get the full item text and extract what comes after the link
-                    const fullText = item.textContent.trim();
-                    // The subtitle is everything after the link text
-                    if (fullText.length > linkText.length) {
-                        const subtitle = fullText.substring(linkText.length).trim();
-                        if (subtitle) {
-                            // Store by a normalized version of the title (remove trailing punctuation for matching)
-                            const normalizedTitle = linkText.replace(/[.!?]\s*$/, '').replace(/\s*\(Blank\)\s*$/, '').trim();
-                            existingSubtitles[normalizedTitle] = subtitle;
-                            console.log(`Found existing subtitle for "${normalizedTitle}": "${subtitle}"`);
-                        }
-                    }
+                if (!link) return;
+                const linkText = link.textContent.trim();
+                const normalizedTitle = linkText.replace(/[.!?]\s*$/, '').replace(/\s*\(Blank\)\s*$/, '').trim();
+                if (!normalizedTitle || TOC_TITLE_PATTERN.test(normalizedTitle)) return;
+                // Everything after the link, cloned as HTML, so bold/italics/
+                // links in hand-edited annotations survive regeneration
+                const extra = document.createElement('div');
+                let node = link.nextSibling;
+                while (node) {
+                    extra.appendChild(node.cloneNode(true));
+                    node = node.nextSibling;
+                }
+                if (extra.innerHTML.trim()) {
+                    existingEntryExtras[normalizedTitle] = extra.innerHTML;
+                    console.log(`Preserving TOC extra for "${normalizedTitle}":`, extra.innerHTML.substring(0, 80));
                 }
             });
-            // Remove existing TOC
-            existingToc.remove();
+        };
+
+        // Case 1: container still has its id (TOC inserted this session)
+        const existingTocById = document.getElementById(tocContainerId);
+        if (existingTocById) {
+            collectEntryExtras(existingTocById);
+            existingTocById.remove();
+        }
+
+        // Case 2: structural detection after ProseMirror stripped the id
+        const tocHeader = headersArray.find(h =>
+            h.isConnected && TOC_TITLE_PATTERN.test(h.textContent.trim()));
+        if (tocHeader) {
+            const toRemove = [];
+            let n = tocHeader.nextElementSibling;
+            while (n && !['H1', 'H2', 'H3', 'H4'].includes(n.tagName)) {
+                const listEl = ['OL', 'UL'].includes(n.tagName) ? n : n.querySelector?.('ol, ul');
+                if (listEl) {
+                    collectEntryExtras(listEl);
+                    toRemove.push(n);
+                    break;
+                }
+                if (!n.textContent.trim()) {
+                    // Empty filler between TOC title and list
+                    toRemove.push(n);
+                    n = n.nextElementSibling;
+                    continue;
+                }
+                break; // real content — don't eat it
+            }
+            toRemove.forEach(el => el.remove());
+            tocHeader.remove();
+        }
+
+        // Never list a TOC header as a TOC entry, and drop anything the
+        // removal above disconnected
+        headersArray = headersArray.filter(h =>
+            h.isConnected && !TOC_TITLE_PATTERN.test(h.textContent.trim()));
+        if (headersArray.length === 0) {
+            return { success: false, error: "No headers found to generate TOC" };
         }
 
         const labelAsBlank = ' (Blank)';
@@ -1051,11 +1095,11 @@ function generateTOC(postUrl) {
 
             tocItem.appendChild(tocLink);
 
-            // Check for existing subtitle text and append it
+            // Re-attach any hand-added content from the old TOC entry,
+            // formatting included
             const normalizedHeaderText = headerText.replace(/[.!?]\s*$/, '').trim();
-            if (existingSubtitles[normalizedHeaderText]) {
-                const subtitleSpan = document.createTextNode(' ' + existingSubtitles[normalizedHeaderText]);
-                tocItem.appendChild(subtitleSpan);
+            if (existingEntryExtras[normalizedHeaderText]) {
+                tocItem.insertAdjacentHTML('beforeend', existingEntryExtras[normalizedHeaderText]);
             }
 
             tocList.appendChild(tocItem);
