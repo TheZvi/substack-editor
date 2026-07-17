@@ -1078,9 +1078,19 @@ function generateTOC(postUrl) {
             let tocLink = document.createElement('a');
             const headerText = header.textContent.trim();
             const endsWithPunctuation = /[.!?]$/.test(headerText);
-            tocLink.textContent = headerText +
+            const linkText = headerText +
                                (endsWithPunctuation ? '' : '.') +
                                (isEmpty ? labelAsBlank : '');
+            // Special-case titles whose TOC entries render in italics
+            const ITALIC_TOC_TITLES = ['people just say things'];
+            const titleForItalics = headerText.replace(/[.!?]\s*$/, '').trim().toLowerCase();
+            if (ITALIC_TOC_TITLES.includes(titleForItalics)) {
+                const em = document.createElement('em');
+                em.textContent = linkText;
+                tocLink.appendChild(em);
+            } else {
+                tocLink.textContent = linkText;
+            }
 
             // Handle URLs
             const urlMatch = postUrl.match(/^(https:\/\/[^\/]+)\/publish\/post\/(\d+)/);
