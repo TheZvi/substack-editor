@@ -1223,6 +1223,27 @@ function detectPageAuthor() {
     // 0. Site-specific detection (check first for accuracy)
     const hostname = window.location.hostname;
 
+    // Substack Notes (substack.com/@handle/note/...): the author's handle is
+    // right in the URL. Use the on-page display name from the header link to
+    // that handle, falling back to the handle itself. Head metadata can be
+    // stale here after Substack's SPA navigation, so this runs first.
+    const noteMatch = window.location.pathname.match(/^\/@([^\/]+)\/note\//i);
+    if (hostname === 'substack.com' && noteMatch) {
+        const handle = noteMatch[1];
+        const handleLinks = document.querySelectorAll(
+            `a[href*="/@${handle}"], a[href*="substack.com/@${handle}"]`);
+        for (const link of handleLinks) {
+            const text = link.textContent?.trim();
+            if (text && text.length > 1 && text.length < 50 &&
+                !text.startsWith('@') && /[A-Za-z]/.test(text)) {
+                console.log("[Quote Copy] Substack note author from handle link:", text);
+                return cleanAuthorName(text);
+            }
+        }
+        console.log("[Quote Copy] Substack note author from URL handle:", handle);
+        return cleanAuthorName(handle);
+    }
+
     // LessWrong / EA Forum / Alignment Forum detection
     if (hostname.includes('lesswrong.com') ||
         hostname.includes('alignmentforum.org') ||
@@ -1436,8 +1457,10 @@ function extractAuthorFromJsonLd(data) {
         return null;
     }
 
-    // Check for article types
-    const articleTypes = ['Article', 'NewsArticle', 'BlogPosting', 'WebPage', 'CreativeWork'];
+    // Check for article types (including social posts — Substack Notes
+    // declare SocialMediaPosting with the author as a Person)
+    const articleTypes = ['Article', 'NewsArticle', 'BlogPosting', 'WebPage', 'CreativeWork',
+        'SocialMediaPosting', 'DiscussionForumPosting', 'Comment'];
     if (data['@type'] && articleTypes.some(t => data['@type'].includes(t))) {
         if (data.author) {
             if (typeof data.author === 'string') {
