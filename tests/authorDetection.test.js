@@ -34,6 +34,12 @@ function isWireServiceName(text) {
     return WIRE_SERVICE_PATTERN.test(text.trim());
 }
 
+const GENERIC_ACCOUNT_NAME_PATTERN = /^(system|admin|administrator|root|webmaster|moderator|mod|bot|guest|anonymous|anon|user|editor|staff|team|info|support|contact|noreply|no-?reply|unknown|default|test)$/i;
+
+function isGenericAccountName(text) {
+    return GENERIC_ACCOUNT_NAME_PATTERN.test((text || '').trim());
+}
+
 function isAllCapsName(name) {
     const withoutConnectors = name.replace(/\b(and)\b/g, '');
     return /[A-Z]/.test(withoutConnectors) && !/[a-z]/.test(withoutConnectors);
@@ -639,6 +645,24 @@ assertEqual(isAuthorProfileHref('https://www.politico.com/staff/dana-nickel'), t
 assertEqual(isLikelyPersonName('Follow on Bluesky'), false, '"Follow on Bluesky" is not a person');
 assertEqual(isLikelyPersonName('Share This Article'), false, '"Share This Article" is not a person');
 assertEqual(isLikelyPersonName('Subscribe Now Today'), false, '"Subscribe Now Today" is not a person');
+
+console.log('\n--- isGenericAccountName (huggingface.co "system" regression) ---');
+// huggingface.co blog posts are published by the platform "system" account,
+// which won the byline heuristics; generic account names are never authors,
+// so detection now falls through to the site name instead.
+assertEqual(isGenericAccountName('system'), true, '"system" is generic');
+assertEqual(isGenericAccountName('System'), true, 'Case-insensitive');
+assertEqual(isGenericAccountName('  admin  '), true, 'Whitespace trimmed');
+assertEqual(isGenericAccountName('administrator'), true, 'administrator');
+assertEqual(isGenericAccountName('bot'), true, 'bot');
+assertEqual(isGenericAccountName('anonymous'), true, 'anonymous');
+assertEqual(isGenericAccountName('noreply'), true, 'noreply');
+assertEqual(isGenericAccountName('no-reply'), true, 'no-reply');
+assertEqual(isGenericAccountName('Sarah Constantin'), false, 'Real name is not generic');
+assertEqual(isGenericAccountName('Adminah Smith'), false, 'Name starting with admin- is not generic');
+assertEqual(isGenericAccountName('Systema Naturae'), false, 'Multi-word phrase is not generic');
+assertEqual(isGenericAccountName(''), false, 'Empty string is not generic');
+assertEqual(isGenericAccountName(null), false, 'Null is not generic');
 
 console.log('\n--- extractSiteNameFromTitle ---');
 assertEqual(extractSiteNameFromTitle('xAI | The Midas Project'), 'The Midas Project', 'Title suffix after | is the site name');

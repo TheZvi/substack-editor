@@ -738,6 +738,10 @@ async function copySelectedQuote() {
 
         try {
             author = await detectAuthorWithLLM(range, selectedText);
+            if (author && isGenericAccountName(author)) {
+                console.log("[Quote Copy] LLM returned generic account name, discarding:", author);
+                author = null;
+            }
         } catch (err) {
             console.error("[Quote Copy] LLM fallback failed:", err);
         }
@@ -1056,6 +1060,15 @@ function isWireServiceName(text) {
     return WIRE_SERVICE_PATTERN.test(text.trim());
 }
 
+// Platform/bot account names that are never a real author (e.g. HuggingFace
+// blog posts published by the "system" account). When one of these wins a
+// heuristic, skip it so detection falls through to the site name instead.
+const GENERIC_ACCOUNT_NAME_PATTERN = /^(system|admin|administrator|root|webmaster|moderator|mod|bot|guest|anonymous|anon|user|editor|staff|team|info|support|contact|noreply|no-?reply|unknown|default|test)$/i;
+
+function isGenericAccountName(text) {
+    return GENERIC_ACCOUNT_NAME_PATTERN.test((text || '').trim());
+}
+
 // Some sites (e.g. politico.com) render bylines in all caps ("By DANA NICKEL"),
 // either literally or via CSS text-transform, which innerText reflects.
 // Convert to title case so validation and output treat it as a normal name.
@@ -1327,6 +1340,9 @@ function detectPageAuthor() {
             if (content.trim().toLowerCase() === siteLabel) {
                 continue;
             }
+            if (isGenericAccountName(content)) {
+                continue;
+            }
             return cleanAuthorName(content);
         }
     }
@@ -1372,7 +1388,7 @@ function detectPageAuthor() {
             const text = el.textContent?.trim();
             if (text && text.length < 50 && text.length > 1) {
                 const cleaned = cleanAuthorName(text);
-                if (cleaned && cleaned.length > 1) {
+                if (cleaned && cleaned.length > 1 && !isGenericAccountName(cleaned)) {
                     return cleaned;
                 }
             }
@@ -1423,15 +1439,16 @@ function detectPageAuthor() {
         ?.getAttribute('content')?.trim();
     if (twitterCreator && !twitterCreator.startsWith('http')) {
         const handle = twitterCreator.replace(/^@/, '').toLowerCase();
-        if (handle && handle !== siteLabel) {
+        if (handle && handle !== siteLabel && !isGenericAccountName(handle)) {
             return cleanAuthorName(twitterCreator);
         }
     }
 
     // 8. Site/organization name. Org sites with no byline anywhere (e.g.
-    // themidasproject.com watchtower pages) are best attributed to the org
-    // itself. Prefer og:site_name; fall back to the "Title | Site Name"
-    // page-title suffix.
+    // themidasproject.com watchtower pages, huggingface.co blog posts
+    // published by the "system" account) are best attributed to the org
+    // itself. Prefer og:site_name, then the "Title | Site Name" page-title
+    // suffix, then the header home-link text (the site logo's label).
     const ogSiteName = document.querySelector('meta[property="og:site_name"]')
         ?.getAttribute('content')?.trim();
     if (ogSiteName && ogSiteName.length > 1 && ogSiteName.length < 60) {
@@ -1442,6 +1459,18 @@ function detectPageAuthor() {
     if (titleSiteName) {
         console.log("[Quote Copy] Using page-title site name as author:", titleSiteName);
         return titleSiteName;
+    }
+    // Header home link: <a href="/">Site Name</a> at the top of the page
+    // (e.g. "Hugging Face" next to the logo)
+    for (const homeLink of document.querySelectorAll('header a[href="/"], nav a[href="/"], a[href="/"]')) {
+        const text = homeLink.textContent?.trim();
+        if (!text || text.length < 2 || text.length > 40) continue;
+        const rect = homeLink.getBoundingClientRect?.();
+        // Must be in the page header area (absolute position, top of document)
+        const absTop = rect ? rect.top + window.scrollY : Infinity;
+        if (absTop > 300) continue;
+        console.log("[Quote Copy] Using header home-link text as author:", text);
+        return text;
     }
 
     return null;
@@ -1464,15 +1493,15 @@ function extractAuthorFromJsonLd(data) {
     if (data['@type'] && articleTypes.some(t => data['@type'].includes(t))) {
         if (data.author) {
             if (typeof data.author === 'string') {
-                return cleanAuthorName(data.author);
+                return isGenericAccountName(data.author) ? null : cleanAuthorName(data.author);
             }
             if (data.author.name) {
-                return cleanAuthorName(data.author.name);
+                return isGenericAccountName(data.author.name) ? null : cleanAuthorName(data.author.name);
             }
             if (Array.isArray(data.author)) {
                 const names = data.author
                     .map(a => cleanAuthorName(a.name || (typeof a === 'string' ? a : '')))
-                    .filter(n => n);
+                    .filter(n => n && !isGenericAccountName(n));
                 if (names.length === 0) return null;
                 if (names.length === 1) return names[0];
                 if (names.length === 2) return `${names[0]} and ${names[1]}`;
